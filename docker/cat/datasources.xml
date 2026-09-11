@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  CAT Server Datasource Configuration
+  Connects the CAT server to its MySQL database.
+  Mounted at /data/appdatas/cat/datasources.xml in the cat-server container.
+-->
+<data-sources>
+    <data-source id="cat">
+        <maximum-pool-size>3</maximum-pool-size>
+        <connection-timeout>1000</connection-timeout>
+        <idle-timeout>600000</idle-timeout>
+        <statement-timeout>200</statement-timeout>
+        <url>jdbc:mysql://cat-mysql:3306/cat</url>
+        <user>root</user>
+        <password></password>
+    </data-source>
+    <data-source id="app">
+        <maximum-pool-size>3</maximum-pool-size>
+        <connection-timeout>1000</connection-timeout>
+        <idle-timeout>600000</idle-timeout>
+        <statement-timeout>200</statement-timeout>
+        <url>jdbc:mysql://cat-mysql:3306/cat</url>
+        <user>root</user>
+        <password></password>
+    </data-source>
+</data-sources>

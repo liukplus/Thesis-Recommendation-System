@@ -1,0 +1,50 @@
+# Docker build context is the repo root (backend/ is a uv workspace member,
+# so uv.lock and the root pyproject.toml must be in the context).
+# Everything not needed to build the backend image is excluded here.
+
+# Virtualenvs & caches
+.venv
+**/.venv
+**/__pycache__
+**/*.pyc
+**/*.pyo
+.pytest_cache
+.mypy_cache
+.ruff_cache
+
+# VCS & editor
+.git
+.gitignore
+.idea
+.vscode
+.claude
+
+# Tests (not needed in the runtime image)
+backend/tests
+
+# Frontend — built separately
+frontend
+
+# Docs, notes, thesis material
+docs
+interview
+vibe-coding
+*.md
+!README.md
+*.pdf
+cli_reference_text.txt
+cli_reference_tmp.html
+
+# Local data & secrets
+data
+.env
+.env.*
+!.env.example
+
+# Docker files themselves
+docker-compose.yml
+docker
+**/Dockerfile
+**/.dockerignore
+
+.DS_Store

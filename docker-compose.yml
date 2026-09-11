@@ -1,0 +1,173 @@
+# ============================================
+# Thesis Recommendation System — Docker Compose
+# ============================================
+# Usage:
+#   docker compose up redis          # just Redis
+#   docker compose --profile cat up  # CAT server + backend
+#   docker compose --profile full up # everything
+#   docker compose up backend        # backend only (no CAT)
+# ============================================
+
+services:
+  # ==========================================
+  # CAT Server Stack
+  # ==========================================
+  cat-mysql:
+    image: mysql:5.7.37
+    container_name: thesis-cat-mysql
+    environment:
+      MYSQL_ALLOW_EMPTY_PASSWORD: "true"
+      MYSQL_DATABASE: "cat"
+    ports:
+      - "3307:3306"
+    volumes:
+      - cat_mysql_data:/var/lib/mysql
+      - ./docker/cat/init.sql:/docker-entrypoint-initdb.d/01-init.sql
+    command: >
+      mysqld --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+      --init-connect='SET NAMES utf8mb4;' --innodb-flush-log-at-trx-commit=0
+      --max_allowed_packet=1000M
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    profiles:
+      - cat
+      - full
+
+  cat-server:
+    image: meituaninc/cat:3.0.0
+    container_name: thesis-cat-server
+    environment:
+      MYSQL_URL: cat-mysql
+      MYSQL_PORT: 3306
+      MYSQL_USERNAME: root
+      MYSQL_PASSWD: ""
+      MYSQL_SCHEMA: cat
+    ports:
+      - "8080:8080"   # CAT admin UI → http://localhost:8080/cat
+      - "2280:2280"   # CAT TCP data port (clients send data here)
+    volumes:
+      - ./docker/cat/client.xml:/data/appdatas/cat/client.xml
+      - cat_logs:/data/applogs/cat
+    depends_on:
+      cat-mysql:
+        condition: service_healthy
+    profiles:
+      - cat
+      - full
+
+  # ==========================================
+  # Backend (Python FastAPI)
+  # ==========================================
+  backend:
+    build:
+      # Context is the repo root: backend/ is a uv workspace member, so
+      # uv.lock + the root pyproject.toml must be inside the build context.
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: thesis-backend
+    environment:
+      APP_ENV: dev
+      APP_NAME: thesis-recsys
+      LOG_LEVEL: info
+      HOST: 0.0.0.0
+      PORT: 8000
+      DATABASE_URL: sqlite:///./data/thesis.db
+      LLM_BASE_URL: ${LLM_BASE_URL:-https://api.deepseek.com/v1}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_MODEL: ${LLM_MODEL:-deepseek-chat}
+      CAT_APPKEY: thesis-recsys
+      CAT_ENABLED: "true"
+      CAT_SERVER_HOST: cat-server
+      CAT_SERVER_PORT: 2280
+    ports:
+      - "8000:8000"
+    volumes:
+      # Hot reload: mount source over the editable install path
+      - ./backend/src:/app/backend/src
+      # SQLite data
+      - ./data:/app/data
+      # CAT client config
+      - ./docker/cat/client.xml:/data/appdatas/cat/client.xml
+      # CAT client logs
+      - cat_client_logs:/data/applogs/cat
+    depends_on:
+      cat-server:
+        condition: service_started
+    profiles:
+      - cat
+      - full
+      - backend
+
+  # ==========================================
+  # Frontend (React + Vite, optional)
+  # ==========================================
+  frontend:
+    image: node:20-alpine
+    container_name: thesis-frontend
+    working_dir: /app
+    command: >
+      sh -c "
+        npm install &&
+        npm run dev -- --host 0.0.0.0 --port 5173
+      "
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend:/app
+      # Anonymous volume to prevent node_modules from being overwritten
+      - /app/node_modules
+    profiles:
+      - full
+
+  # ==========================================
+  # Optional Infrastructure
+  # ==========================================
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    profiles:
+      - redis
+      - full
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    ports:
+      - "6333:6333"
+    volumes:
+      - qdrant_data:/qdrant/storage
+    profiles:
+      - qdrant
+      - full
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: thesis
+      POSTGRES_PASSWORD: thesis
+      POSTGRES_DB: thesis_recsys
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    profiles:
+      - postgres
+      - full
+
+
+# ==========================================
+# Volumes
+# ==========================================
+volumes:
+  redis_data:
+  qdrant_data:
+  pg_data:
+  cat_mysql_data:
+  cat_logs:
+  cat_client_logs:

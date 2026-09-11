@@ -1,0 +1,38 @@
+.error-alert {
+  display: flex;
+  gap: 1rem;
+  padding: 1rem 1.25rem;
+  background: var(--error-bg);
+  border: 1px solid var(--error-border);
+  border-radius: var(--radius-md);
+  color: var(--error-text);
+}
+
+.error-icon {
+  font-size: 1.25rem;
+  flex-shrink: 0;
+}
+
+.error-content {
+  flex: 1;
+}
+
+.error-message {
+  margin: 0 0 0.5rem 0;
+  line-height: 1.5;
+}
+
+.error-retry {
+  background: none;
+  border: none;
+  color: var(--error-text);
+  text-decoration: underline;
+  cursor: pointer;
+  padding: 0;
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.error-retry:hover {
+  opacity: 0.8;
+}

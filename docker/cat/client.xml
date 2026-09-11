@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  CAT Client Configuration
+  This file tells the cat-sdk where to find the CAT server.
+  Mounted at /data/appdatas/cat/client.xml in the backend container.
+-->
+<config mode="client">
+    <servers>
+        <!--
+          ip: hostname of the CAT server (Docker service name)
+          port: 2280 (TCP data port for CAT protocol)
+          http-port: 8080 (CAT admin UI)
+        -->
+        <server id="cat-server" ip="cat-server" port="2280" http-port="8080"/>
+    </servers>
+</config>

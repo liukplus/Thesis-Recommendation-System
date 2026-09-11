@@ -1,0 +1,120 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+pip-wheel-metadata/
+share/python-wheels/
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# uv
+.uv/
+# uv.lock IS tracked, on purpose: backend/Dockerfile runs `uv sync --frozen`,
+# so a fresh clone needs the lockfile in the build context to build the image.
+
+# Testing / coverage
+.pytest_cache/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+
+# Jupyter
+.ipynb_checkpoints
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# pytype
+.pytype/
+
+# ruff
+.ruff_cache/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Data / models
+data/
+*.db
+*.sqlite
+*.sqlite3
+# Anchored to the repo root, on purpose: a bare `models/` also matches
+# backend/src/app/db/models/, which is SQLAlchemy source, not model weights.
+/models/
+.vector_store/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Node / Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+frontend/build/
+.DS_Store
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Docker volumes
+docker-data/
+
+# Claude Code — personal machine settings.
+# Shared, checked-in config belongs in .claude/settings.json instead.
+.claude/settings.local.json
+
+# Scratch — scraped third-party docs, not project material
+cli_reference_*
+
+# Personal material: kept on disk, deliberately out of the repo so the
+# project stays publishable on its own.
+interview/
+vibe-coding/
+院审修改.pdf
+
+# Thesis paperwork — carries personal identifying details. Kept on disk,
+# out of the repo so the codebase can be shared on its own.
+docs/Resume_Shining_Points.md
+docs/Opening_Report_EN.md
+docs/院审修改_开题报告.md
