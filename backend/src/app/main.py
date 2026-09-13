@@ -38,6 +38,18 @@ async def lifespan(app: FastAPI):
     init_db()
     logger.info("Database initialized")
 
+    # In dev, seed an empty database with the bundled demo catalog so the app
+    # is explorable without external services. Never block startup on seeding.
+    if settings.is_dev and settings.seed_demo_data:
+        try:
+            from app.db.seed import seed_demo_papers
+
+            inserted = seed_demo_papers()
+            if inserted:
+                logger.info(f"Seeded {inserted} demo papers into an empty database")
+        except Exception as e:  # pragma: no cover - defensive
+            logger.warning(f"Demo data seeding skipped: {e}")
+
     # Initialize CAT (Meituan APM)
     cat_integration.init(
         appkey=settings.cat_appkey,

@@ -45,11 +45,15 @@ class RerankStage(BaseStage):
 def _rerank_simple(papers: list[dict], query: str) -> list[dict]:
     """Simple reranking stub.
 
-    Uses a combination of fused_score and citation_count to produce a
-    final relevance score. Real implementation would use a cross-encoder.
+    Blends retrieval relevance, cross-source agreement (RRF) and citation
+    impact. Papers whose text matched the query (``match == "keyword"``) are
+    ranked strictly above popularity-only fallbacks, so a highly cited but
+    off-topic paper can never bury a relevant one. A real implementation
+    would replace this with a cross-encoder score.
 
     Args:
-        papers: List of papers with 'fused_score' and 'citation_count'.
+        papers: List of papers with 'score', 'fused_score', 'match' and
+            'citation_count'.
         query: The query (unused in stub, used in real impl).
 
     Returns:
@@ -58,17 +62,27 @@ def _rerank_simple(papers: list[dict], query: str) -> list[dict]:
     if not papers:
         return []
 
-    # Normalize citation counts to [0, 1]
+    # Normalize signals to [0, 1]. RRF fused scores live on a tiny scale
+    # (~1/(k+rank)), so raw values cannot be blended directly.
     max_citations = max((p.get("citation_count", 0) for p in papers), default=1)
+    max_fused = max((p.get("fused_score", p.get("score", 0.5)) for p in papers), default=1.0)
+    max_fused = max_fused or 1.0
+    max_citations = max_citations or 1
 
     for p in papers:
         fused = p.get("fused_score", p.get("score", 0.5))
-        citations = p.get("citation_count", 0)
-        normalized_cit = citations / max_citations if max_citations > 0 else 0
+        rrf_signal = fused / max_fused
+        citation_signal = p.get("citation_count", 0) / max_citations
+        # Retrieval score from the offline keyword/fallback search.
+        relevance = p.get("score", 0.5)
 
-        # Weighted combination: 70% relevance, 30% citation impact
-        rerank_score = 0.7 * fused + 0.3 * normalized_cit
-        p["rerank_score"] = round(rerank_score, 4)
+        if p.get("match", "keyword") == "keyword":
+            # Band [0.60, 1.0]: relevance dominates, popularity only breaks ties.
+            rerank_score = 0.60 + 0.25 * relevance + 0.08 * rrf_signal + 0.07 * citation_signal
+        else:
+            # Band [0.30, ~0.46]: query-matched papers always outrank these.
+            rerank_score = 0.30 + 0.12 * relevance + 0.04 * rrf_signal + 0.04 * citation_signal
+        p["rerank_score"] = round(min(rerank_score, 1.0), 4)
 
     # Sort by rerank score
     papers.sort(key=lambda x: x.get("rerank_score", 0), reverse=True)

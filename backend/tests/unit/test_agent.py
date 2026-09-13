@@ -2,12 +2,11 @@
 from __future__ import annotations
 
 import pytest
-
 from app.agent.guardrails import GuardrailController
-from app.agent.tools import TOOL_REGISTRY
-from app.agent.state import AgentState, PlanStep
-from app.agent.planner import PlanFirstPlanner
 from app.agent.loop import AgentRuntime
+from app.agent.planner import PlanFirstPlanner
+from app.agent.state import AgentState, PlanStep
+from app.agent.tools import TOOL_REGISTRY
 
 
 class TestGuardrails:
@@ -112,14 +111,32 @@ class TestToolRegistry:
 
     @pytest.mark.asyncio
     async def test_search_stub_tool(self):
-        """Search stub should return mock results."""
+        """Search stub should return ranked, query-relevant catalog papers."""
         result = await TOOL_REGISTRY.execute(
-            "search_stub", {"query": "AI", "max_results": 3}
+            "search_stub", {"query": "graph neural networks", "max_results": 5}
+        )
+        assert isinstance(result, list)
+        assert len(result) == 5
+        assert all("title" in r and "score" in r for r in result)
+
+        # Results are ranked by non-increasing relevance.
+        scores = [r["score"] for r in result]
+        assert scores == sorted(scores, reverse=True)
+
+        # The top hit is genuinely about graphs.
+        top = result[0]
+        blob = (top["title"] + " " + (top.get("abstract") or "")).lower()
+        assert "graph" in blob
+
+    @pytest.mark.asyncio
+    async def test_search_stub_fallback_for_unmatched_query(self):
+        """An unmatchable query still returns demo results (never an empty demo)."""
+        result = await TOOL_REGISTRY.execute(
+            "search_stub", {"query": "zzzz qqqq", "max_results": 3}
         )
         assert isinstance(result, list)
         assert len(result) == 3
-        assert "title" in result[0]
-        assert "AI" in result[0]["title"]
+        assert all("title" in r for r in result)
 
     def test_unknown_tool_raises(self):
         """Executing unknown tool should raise ValidationError."""

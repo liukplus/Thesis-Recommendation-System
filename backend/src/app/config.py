@@ -33,6 +33,8 @@ class Settings(BaseSettings):
 
     # ---- Database ----
     database_url: str = "sqlite:///./data/thesis.db"
+    # Auto-load the bundled mock catalog into an empty DB on startup (demo mode).
+    seed_demo_data: bool = True
 
     # ---- LLM ----
     llm_base_url: str = "https://api.deepseek.com/v1"

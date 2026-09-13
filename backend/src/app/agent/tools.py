@@ -11,13 +11,15 @@ The TOOL_REGISTRY is the central registry of all available tools.
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, field
-from typing import Any, Awaitable, Callable, Optional, Type
+from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
+from typing import Any
 
 from pydantic import BaseModel, Field
 
 from app.core.exceptions import ValidationError
 from app.core.logging import get_logger
+from app.mock import search_mock_papers
 
 logger = get_logger(__name__)
 
@@ -37,7 +39,7 @@ class ToolSpec:
 
     name: str
     description: str
-    input_schema: Type[BaseModel]
+    input_schema: type[BaseModel]
     handler: Callable[..., Awaitable[Any]]
     category: str = "general"
 
@@ -81,7 +83,7 @@ class ToolRegistry:
         self._tools[tool.name] = tool
         logger.debug(f"Tool registered: {tool.name} ({tool.category})")
 
-    def get(self, name: str) -> Optional[ToolSpec]:
+    def get(self, name: str) -> ToolSpec | None:
         """Get a tool by name.
 
         Args:
@@ -125,7 +127,7 @@ class ToolRegistry:
         self,
         tool_name: str,
         arguments: dict[str, Any] | str,
-        context: Optional[dict[str, Any]] = None,
+        context: dict[str, Any] | None = None,
     ) -> Any:
         """Execute a tool by name.
 
@@ -151,7 +153,7 @@ class ToolRegistry:
             except json.JSONDecodeError as e:
                 raise ValidationError(
                     f"Invalid JSON arguments for tool '{tool_name}': {e}"
-                )
+                ) from e
 
         # Validate arguments against schema
         try:
@@ -190,7 +192,7 @@ async def echo_handler(params: EchoParams, context: dict) -> str:
 class GetHelpParams(BaseModel):
     """Parameters for the get_help tool."""
 
-    topic: Optional[str] = Field(default=None, description="Optional topic to get help about.")
+    topic: str | None = Field(default=None, description="Optional topic to get help about.")
 
 
 async def get_help_handler(params: GetHelpParams, context: dict) -> str:
@@ -216,23 +218,18 @@ class SearchStubParams(BaseModel):
     max_results: int = Field(default=5, ge=1, le=20, description="Max number of results.")
 
 
+# Fields surfaced to the agent (and shown in the UI's tool-result panel).
+_SEARCH_FIELDS = ("id", "title", "authors", "year", "venue", "abstract", "doi", "url", "score")
+
+
 async def search_stub_handler(params: SearchStubParams, context: dict) -> list[dict]:
-    """Search for academic papers (stub implementation). Returns mock results."""
-    results = []
-    for i in range(params.max_results):
-        results.append({
-            "id": f"stub_{i+1}",
-            "title": f"Paper about {params.query} - Study {i+1}",
-            "authors": f"Author {i+1}A, Author {i+1}B",
-            "year": 2024 - i,
-            "venue": "Journal of Computer Science Research",
-            "abstract": f"This paper explores {params.query} from a novel perspective. "
-                        f"We propose a method that improves performance by {10 + i*5}% "
-                        f"on standard benchmarks. The approach is validated through "
-                        f"extensive experiments on multiple datasets.",
-            "score": round(0.95 - i * 0.08, 3),
-        })
-    return results
+    """Search for academic papers over the bundled demo catalog.
+
+    Returns ranked papers with real metadata. A production deployment swaps
+    ``search_mock_papers`` for a retrieval client without changing this shape.
+    """
+    hits = search_mock_papers(params.query, limit=params.max_results)
+    return [{k: p.get(k) for k in _SEARCH_FIELDS} for p in hits]
 
 
 class SummarizeStubParams(BaseModel):
@@ -245,10 +242,7 @@ class SummarizeStubParams(BaseModel):
 async def summarize_stub_handler(params: SummarizeStubParams, context: dict) -> str:
     """Summarize text (stub implementation). Returns a short summary."""
     text = params.text
-    if len(text) > 200:
-        summary_text = text[:180] + "..."
-    else:
-        summary_text = text
+    summary_text = text[:180] + "..." if len(text) > 200 else text
 
     if params.style == "bullet_points":
         return (

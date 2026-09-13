@@ -1,4 +1,4 @@
-.PHONY: help dev backend-dev frontend-dev test test-unit test-integ lint typecheck format db-init demo clean \
+.PHONY: help dev backend-dev frontend-dev test test-unit test-integ lint typecheck format db-init db-seed db-reseed demo clean \
         docker-up docker-down docker-logs docker-build docker-shell docker-test docker-cat-check
 
 help:
@@ -15,6 +15,8 @@ help:
 	@echo "  make format         Run ruff format"
 	@echo "  make typecheck      Run mypy"
 	@echo "  make db-init        Initialize database (create tables)"
+	@echo "  make db-seed        Load demo papers into the (empty) database"
+	@echo "  make db-reseed      Wipe and reload the demo papers"
 	@echo ""
 	@echo "=== Docker (with CAT APM) ==="
 	@echo "  make docker-up        Start all services (backend + CAT + MySQL)"
@@ -59,6 +61,12 @@ typecheck:
 
 db-init:
 	cd backend && uv run python -c "from app.db.session import init_db; init_db()"
+
+db-seed:
+	cd backend && uv run python -m app.db.seed
+
+db-reseed:
+	cd backend && uv run python -m app.db.seed --reset
 
 demo:
 	@echo "=== Thesis RecSys Demo ==="

@@ -11,6 +11,7 @@ Intelligent paper search and recommendation system with an 8-stage RAG pipeline 
 - 🤖 **Agent Research Assistant** — ReAct agent with plan-first mode, tool use, and guardrails
 - 🔄 **SSE Streaming** — real-time progress updates for both pipeline and agent
 - 📚 **Citation Verification** — two-level citation verification (string match + semantic)
+- 📦 **Batteries-included Demo** — 30 famous AI/ML papers bundled; everything runs offline with no LLM key, vector DB, Redis, or external APIs
 - 🎨 **Modern React UI** — clean, responsive interface with dark mode support
 
 ## 🏗️ Architecture
@@ -59,7 +60,29 @@ cp .env.example .env
 # Edit .env with your API keys (optional — works without LLM in demo mode)
 ```
 
-### 3. Start development servers
+### 3. Try the demo (no external services needed)
+
+The app ships with a bundled catalog of 30 well-known AI/ML papers and a fully
+offline retrieval stack, so every feature works without an LLM key, embedding
+models, a vector DB, Redis, or an external paper API:
+
+- on first startup an empty SQLite DB is auto-seeded with the catalog in dev
+  mode (`SEED_DEMO_DATA=true`; set it to `false` to opt out);
+- pipeline recall → fusion → rerank run against the catalog with an offline
+  IDF-weighted keyword scorer and a popularity fallback, so **any** query
+  returns a non-empty, plausibly ranked list;
+- the agent's `search_stub` tool searches the same catalog; a built-in
+  rule-based planner drives the run when no LLM is configured.
+
+```bash
+make db-seed      # seed manually (idempotent — skips if the DB is populated)
+make db-reseed    # wipe and reload the demo catalog
+```
+
+Try queries such as `graph neural networks`, `reinforcement learning policy
+gradient`, `retrieval augmented generation`, or `low-rank adaptation`.
+
+### 4. Start development servers
 
 ```bash
 # Both backend and frontend (from project root)
@@ -70,7 +93,7 @@ make backend-dev    # http://localhost:8000
 make frontend-dev   # http://localhost:5173
 ```
 
-### 4. Verify it works
+### 5. Verify it works
 
 - **Backend health**: `curl http://localhost:8000/health/live`
 - **API docs**: http://localhost:8000/docs
@@ -165,7 +188,8 @@ thesis-recsys/
 │   │   ├── main.py            # FastAPI app factory + lifespan
 │   │   ├── config.py          # pydantic-settings config
 │   │   ├── core/              # ids, logging, exceptions, tracing
-│   │   ├── db/                # SQLAlchemy models + repositories
+│   │   ├── db/                # SQLAlchemy models, repositories, demo seeder
+│   │   ├── mock/              # Bundled 30-paper demo catalog + offline search
 │   │   ├── llm/               # OpenAI-compatible client + structured output
 │   │   ├── pipeline/          # 8-stage RAG pipeline
 │   │   │   ├── context.py     # PipelineContext (shared state)
@@ -189,7 +213,7 @@ thesis-recsys/
 │   │   │   └── errors.py      # global exception handlers
 │   │   └── schemas/           # Pydantic models
 │   └── tests/
-│       └── unit/              # 32+ unit tests
+│       └── unit/              # 50+ unit tests
 │
 ├── frontend/
 │   ├── src/
@@ -250,9 +274,13 @@ make typecheck  # MyPy
 ```bash
 # Initialize database (create tables)
 make db-init
+
+# Load / reload the bundled demo catalog (30 famous AI/ML papers)
+make db-seed      # idempotent — no-op when the table already has rows
+make db-reseed    # delete existing papers, then insert the catalog
 ```
 
-The system uses SQLite by default (zero config). Swap to Postgres by setting `DATABASE_URL` in `.env`.
+The system uses SQLite by default (zero config). Swap to Postgres by setting `DATABASE_URL` in `.env`. In dev, an empty database is auto-seeded on startup; control this with `SEED_DEMO_DATA` in `.env`.
 
 ## 🤖 Agent Capabilities
 
@@ -260,7 +288,7 @@ The system uses SQLite by default (zero config). Swap to Postgres by setting `DA
 
 | Tool | Description |
 |------|-------------|
-| `search_stub` | Search for academic papers (stub — replace with real search) |
+| `search_stub` | Search the bundled demo catalog (offline keyword + popularity ranking); swap in a real retrieval client for production |
 | `summarize_stub` | Summarize text in various styles (stub) |
 | `get_help` | Get help about available tools |
 | `echo` | Echo back a message (for testing) |
