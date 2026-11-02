@@ -5,21 +5,22 @@ both synchronously and via SSE streaming.
 """
 from __future__ import annotations
 
-import asyncio
-from typing import Optional
+import json
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from app.api.deps import LLMClientDep, SettingsDep
 from app.core.ids import ensure_trace_id
 from app.core.logging import get_logger
-from app.pipeline.context import PipelineContext
-from app.pipeline.orchestrator import (
-    PipelineOrchestrator,
-    create_default_pipeline,
+from app.domain.pipeline import PipelineData
+from app.graphs.pipeline import (
+    build_pipeline_graph,
+    default_pipeline_stages,
+    serialize_pipeline_state,
 )
+from app.graphs.streaming import pipeline_stream_events
 
 logger = get_logger(__name__)
 
@@ -60,39 +61,11 @@ async def run_pipeline(
     ensure_trace_id()
     logger.info(f"Pipeline run requested: {req.query[:80]}...")
 
-    pipeline = create_default_pipeline()
-    ctx = PipelineContext(query=req.query)
+    graph = build_pipeline_graph()
+    initial = {"query": req.query, "data": PipelineData(), "stage_results": []}
+    state = await graph.ainvoke(initial)
 
-    try:
-        ctx = await pipeline.run(ctx)
-    except Exception as e:
-        logger.error(f"Pipeline failed: {e}")
-        # Return partial results even on failure
-        pass
-
-    # Build response
-    reranked = ctx.get_state("reranked_papers", {})
-    papers = reranked.get("top_k", [])
-
-    answer_data = ctx.get_state("generated_answer", {})
-    answer = answer_data.get("answer", "")
-
-    export = ctx.get_state("export", {})
-    formats = list(export.get("formats", {}).keys()) if export else []
-
-    return PipelineRunResponse(
-        trace_id=ctx.trace_id,
-        query=ctx.query,
-        success=ctx.success,
-        total_duration_ms=round(ctx.total_duration_ms, 2),
-        stages=[
-            {"name": r.stage_name, "success": r.success, "duration_ms": round(r.duration_ms, 2)}
-            for r in ctx.stage_results
-        ],
-        answer=answer,
-        papers=papers,
-        export_formats=formats,
-    )
+    return PipelineRunResponse(**serialize_pipeline_state(state))
 
 
 @router.post("/run-stream")
@@ -111,88 +84,16 @@ async def run_pipeline_stream(
     - error: an error occurred
     """
     ensure_trace_id()
-    pipeline = create_default_pipeline()
-    ctx = PipelineContext(query=req.query)
 
-    queue: asyncio.Queue[str] = asyncio.Queue()
+    stages = default_pipeline_stages()
+    stage_names = [stage.name for stage in stages]
+    graph = build_pipeline_graph(stages)
+    initial = {"query": req.query, "data": PipelineData(), "stage_results": []}
 
     async def event_generator():
-        """Generate SSE events as the pipeline runs."""
-        import json
-
-        # Send start event
-        yield f"data: {json.dumps({'type': 'start', 'trace_id': ctx.trace_id, 'query': ctx.query})}\n\n"
-
-        # Progress callback
-        async def progress_cb(stage_name: str, idx: int, total: int, pctx: PipelineContext):
-            event = {
-                "type": "stage_complete",
-                "stage": stage_name,
-                "progress": idx / total,
-                "stage_index": idx,
-                "total_stages": total,
-                "success": pctx.stage_results[-1].success if pctx.stage_results else True,
-                "duration_ms": round(pctx.stage_results[-1].duration_ms, 2) if pctx.stage_results else 0,
-            }
-            await queue.put(json.dumps(event))
-
-        # Stage start events via custom wrapper
-        total = len(pipeline.stages)
-        for i, stage in enumerate(pipeline.stages):
-            start_event = {
-                "type": "stage_start",
-                "stage": stage.name,
-                "stage_index": i + 1,
-                "total_stages": total,
-                "progress": i / total,
-            }
-            yield f"data: {json.dumps(start_event)}\n\n"
-
-            # Run just this stage
-            try:
-                await stage.run(ctx)
-            except Exception as e:
-                error_event = {
-                    "type": "error",
-                    "stage": stage.name,
-                    "error": str(e),
-                }
-                yield f"data: {json.dumps(error_event)}\n\n"
-                break
-
-            # Stage complete event
-            stage_result = ctx.stage_results[-1]
-            complete_event = {
-                "type": "stage_complete",
-                "stage": stage.name,
-                "stage_index": i + 1,
-                "total_stages": total,
-                "progress": (i + 1) / total,
-                "success": stage_result.success,
-                "duration_ms": round(stage_result.duration_ms, 2),
-            }
-            yield f"data: {json.dumps(complete_event)}\n\n"
-
-        ctx.finish()
-
-        # Final result
-        reranked = ctx.get_state("reranked_papers", {})
-        papers = reranked.get("top_k", [])
-        answer_data = ctx.get_state("generated_answer", {})
-        answer = answer_data.get("answer", "")
-
-        final_event = {
-            "type": "complete",
-            "success": ctx.success,
-            "total_duration_ms": round(ctx.total_duration_ms, 2),
-            "answer": answer,
-            "papers": papers,
-            "stages": [
-                {"name": r.stage_name, "success": r.success, "duration_ms": round(r.duration_ms, 2)}
-                for r in ctx.stage_results
-            ],
-        }
-        yield f"data: {json.dumps(final_event)}\n\n"
+        """Generate SSE events from the compiled pipeline graph."""
+        async for event in pipeline_stream_events(graph, initial, stage_names=stage_names):
+            yield f"data: {json.dumps(event, ensure_ascii=False, default=str)}\n\n"
         yield "data: [DONE]\n\n"
 
     return StreamingResponse(
@@ -209,10 +110,10 @@ async def run_pipeline_stream(
 @router.get("/stages")
 async def list_stages() -> dict:
     """List all pipeline stages."""
-    pipeline = create_default_pipeline()
+    stages = default_pipeline_stages()
     return {
         "stages": [
             {"name": s.name, "index": i + 1}
-            for i, s in enumerate(pipeline.stages)
+            for i, s in enumerate(stages)
         ],
     }

@@ -4,8 +4,6 @@ Creates and caches the LLM client based on settings.
 """
 from __future__ import annotations
 
-from typing import Optional
-
 from app.config import Settings, get_settings
 from app.core.logging import get_logger
 from app.llm.base import LLMClient
@@ -13,10 +11,10 @@ from app.llm.openai_compat import OpenAICompatClient
 
 logger = get_logger(__name__)
 
-_instance: Optional[LLMClient] = None
+_instance: LLMClient | None = None
 
 
-def get_llm(settings: Optional[Settings] = None) -> LLMClient:
+def get_llm(settings: Settings | None = None) -> LLMClient:
     """Get the global LLM client instance.
 
     Creates one on first call using settings.

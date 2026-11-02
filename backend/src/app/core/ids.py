@@ -1,14 +1,12 @@
 """ID generation and trace context management."""
 from __future__ import annotations
 
-import os
 import secrets
 import time
 from contextvars import ContextVar
-from typing import Optional
 
 # Trace ID context variable - set per request/task
-_trace_id: ContextVar[Optional[str]] = ContextVar("trace_id", default=None)
+_trace_id: ContextVar[str | None] = ContextVar("trace_id", default=None)
 
 
 def new_id(prefix: str) -> str:
@@ -36,7 +34,7 @@ def new_trace_id() -> str:
     return secrets.token_hex(16)
 
 
-def get_trace_id() -> Optional[str]:
+def get_trace_id() -> str | None:
     """Get the trace ID for the current context.
 
     Returns:
@@ -45,7 +43,7 @@ def get_trace_id() -> Optional[str]:
     return _trace_id.get()
 
 
-def set_trace_id(trace_id: Optional[str]) -> None:
+def set_trace_id(trace_id: str | None) -> None:
     """Set the trace ID for the current context.
 
     Args:

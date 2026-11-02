@@ -2,6 +2,7 @@
 
 Tracks tokens spent and enforces limits per request/session.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -109,13 +110,14 @@ class TokenBudget:
         Returns:
             True if within budget, False otherwise.
         """
-        if self.max_completion_tokens:
-            if self._completion_used + estimated > self.max_completion_tokens:
-                return False
-        if self.max_total_tokens:
-            if self._total_used + estimated > self.max_total_tokens:
-                return False
-        return True
+        completion_exceeded = (
+            self.max_completion_tokens
+            and self._completion_used + estimated > self.max_completion_tokens
+        )
+        total_exceeded = (
+            self.max_total_tokens and self._total_used + estimated > self.max_total_tokens
+        )
+        return not completion_exceeded and not total_exceeded
 
     def reset(self) -> None:
         """Reset the budget counters."""

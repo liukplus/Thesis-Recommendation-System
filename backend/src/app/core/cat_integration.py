@@ -26,10 +26,11 @@ Usage:
     # Record a metric
     cat.metric("api.requests").count()
 """
+
 from __future__ import annotations
 
 from contextlib import contextmanager, suppress
-from typing import Any, Optional
+from typing import Any
 
 from app.core.logging import get_logger
 
@@ -43,8 +44,9 @@ _native_cat: Any = None
 _initialized: bool = False
 
 try:
-    import cat as _native_cat
+    import cat as _cat_module
 
+    _native_cat = _cat_module
     _HAS_NATIVE_CAT = True
 except (ImportError, RuntimeError) as e:
     logger.info(
@@ -66,8 +68,8 @@ CAT_ERROR: str = "error"
 def init(
     appkey: str,
     enabled: bool = True,
-    server_host: Optional[str] = None,
-    server_port: Optional[int] = None,
+    server_host: str | None = None,
+    server_port: int | None = None,
     **kwargs: Any,
 ) -> bool:
     """Initialize the CAT client.
@@ -188,8 +190,8 @@ def log_event(
 # Exception
 # ---------------------------------------------------------------------------
 def log_exception(
-    exception: Exception,
-    trace_info: Optional[str] = None,
+    exception: BaseException,
+    trace_info: str | None = None,
 ) -> None:
     """Log an exception to CAT.
 
@@ -198,7 +200,8 @@ def log_exception(
     the stack trace.
 
     Args:
-        exception: The exception to log.
+        exception: The exception to log (BaseException so logging's
+            ``exc_info`` values, including SystemExit/KeyboardInterrupt, type-check).
         trace_info: Optional custom stack trace string.
     """
     if not _initialized:

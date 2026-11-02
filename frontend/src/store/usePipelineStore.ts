@@ -44,10 +44,15 @@ export const usePipelineStore = create<PipelineState>((set, get) => ({
     set({ isStreaming: true, isLoading: true, error: null, result: null, stages: [], progress: 0 })
     try {
       let finalResult: PipelineResult | null = null
+      let streamError: string | null = null
       const stagesList: PipelineStage[] = []
 
       await streamPipeline(query, (event) => {
         const type = event.type as string
+
+        if (type === 'error') {
+          streamError = (event.error as string) || 'Pipeline stage failed'
+        }
 
         if (type === 'stage_complete') {
           stagesList.push({
@@ -81,9 +86,10 @@ export const usePipelineStore = create<PipelineState>((set, get) => ({
 
       set({
         result: finalResult,
+        error: streamError,
         isStreaming: false,
         isLoading: false,
-        progress: 1,
+        progress: streamError ? get().progress : 1,
       })
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Unknown error'

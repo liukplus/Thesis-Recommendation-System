@@ -6,7 +6,6 @@ Full model with all fields comes later.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Optional
 
 from sqlalchemy import DateTime, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
@@ -34,13 +33,13 @@ class Paper(Base):
     __tablename__ = "papers"
 
     title: Mapped[str] = mapped_column(String(512), index=True)
-    abstract: Mapped[Optional[str]] = mapped_column(Text, default=None)
-    authors: Mapped[Optional[str]] = mapped_column(String(512), default=None)
-    doi: Mapped[Optional[str]] = mapped_column(String(256), unique=True, default=None)
-    venue: Mapped[Optional[str]] = mapped_column(String(256), default=None)
-    year: Mapped[Optional[int]] = mapped_column(default=None)
-    url: Mapped[Optional[str]] = mapped_column(String(1024), default=None)
-    pdf_url: Mapped[Optional[str]] = mapped_column(String(1024), default=None)
+    abstract: Mapped[str | None] = mapped_column(Text, default=None)
+    authors: Mapped[str | None] = mapped_column(String(512), default=None)
+    doi: Mapped[str | None] = mapped_column(String(256), unique=True, default=None)
+    venue: Mapped[str | None] = mapped_column(String(256), default=None)
+    year: Mapped[int | None] = mapped_column(default=None)
+    url: Mapped[str | None] = mapped_column(String(1024), default=None)
+    pdf_url: Mapped[str | None] = mapped_column(String(1024), default=None)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow

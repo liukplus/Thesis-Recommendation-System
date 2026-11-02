@@ -5,7 +5,7 @@ The hierarchy lets callers catch at different granularity levels.
 """
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 
 
 class AppError(Exception):
@@ -24,8 +24,8 @@ class AppError(Exception):
         self,
         message: str,
         *,
-        code: Optional[str] = None,
-        details: Optional[dict[str, Any]] = None,
+        code: str | None = None,
+        details: dict[str, Any] | None = None,
     ) -> None:
         super().__init__(message)
         self.message = message
@@ -76,8 +76,8 @@ class RateLimitError(RetryableError):
         self,
         message: str = "Rate limit exceeded",
         *,
-        retry_after: Optional[float] = None,
-        details: Optional[dict[str, Any]] = None,
+        retry_after: float | None = None,
+        details: dict[str, Any] | None = None,
     ) -> None:
         super().__init__(message, details=details)
         self.retry_after = retry_after
@@ -159,7 +159,7 @@ class PipelineFailedError(FatalRollbackError):
         stage: str,
         message: str,
         *,
-        details: Optional[dict[str, Any]] = None,
+        details: dict[str, Any] | None = None,
     ) -> None:
         super().__init__(message, details=details)
         self.stage = stage

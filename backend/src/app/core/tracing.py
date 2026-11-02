@@ -15,7 +15,6 @@ from __future__ import annotations
 import time
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-from typing import Optional
 
 from app.core import cat_integration
 from app.core.ids import get_trace_id
@@ -38,7 +37,7 @@ class Span:
     end_time: float = 0.0
     attributes: dict[str, str] = field(default_factory=dict)
     status: str = "ok"  # ok | error
-    error_message: Optional[str] = None
+    error_message: str | None = None
 
     @property
     def duration_ms(self) -> float:
@@ -116,7 +115,7 @@ class Tracer:
 
 
 # Global tracer instance
-_tracer: Optional[Tracer] = None
+_tracer: Tracer | None = None
 
 
 def get_tracer() -> Tracer:

@@ -5,13 +5,14 @@ Model-specific logic goes in the subclass.
 """
 from __future__ import annotations
 
-from typing import Any, Generic, Optional, Sequence, Type, TypeVar
+from collections.abc import Sequence
+from typing import Any, Generic, TypeVar
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.db.base import Base
 from app.core.ids import new_id
+from app.db.base import Base
 
 ModelType = TypeVar("ModelType", bound=Base)
 
@@ -25,7 +26,7 @@ class BaseRepository(Generic[ModelType]):
         ModelType: The SQLAlchemy model class this repository manages.
     """
 
-    def __init__(self, model: Type[ModelType], id_prefix: str) -> None:
+    def __init__(self, model: type[ModelType], id_prefix: str) -> None:
         """Initialize the repository.
 
         Args:
@@ -39,7 +40,7 @@ class BaseRepository(Generic[ModelType]):
     # Read operations
     # ------------------------------------------------------------------
 
-    def get_by_id(self, session: Session, item_id: str) -> Optional[ModelType]:
+    def get_by_id(self, session: Session, item_id: str) -> ModelType | None:
         """Get an item by its primary key ID.
 
         Args:

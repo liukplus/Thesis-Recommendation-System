@@ -4,9 +4,7 @@ Simple REST endpoints for managing papers in the database.
 """
 from __future__ import annotations
 
-from typing import Optional
-
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Query
 
 from app.api.deps import DBSessionDep
 from app.core.exceptions import NotFoundError
@@ -28,7 +26,7 @@ async def list_papers(
     db: DBSessionDep,
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=20, ge=1, le=100),
-    search: Optional[str] = Query(default=None, description="Search query"),
+    search: str | None = Query(default=None, description="Search query"),
 ) -> PaperSearchResponse:
     """List papers with optional search."""
     if search:

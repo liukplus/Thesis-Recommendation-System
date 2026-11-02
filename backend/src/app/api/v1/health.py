@@ -1,7 +1,7 @@
 """Health check endpoints."""
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import APIRouter
 
@@ -16,7 +16,7 @@ async def health_live() -> HealthResponse:
     """Liveness probe — the service is running."""
     return HealthResponse(
         status="ok",
-        timestamp=datetime.now(timezone.utc),
+        timestamp=datetime.now(UTC),
         version=__version__,
     )
 
@@ -29,6 +29,6 @@ async def health_ready() -> HealthResponse:
     """
     return HealthResponse(
         status="ok",
-        timestamp=datetime.now(timezone.utc),
+        timestamp=datetime.now(UTC),
         version=__version__,
     )

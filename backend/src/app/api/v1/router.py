@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
-from app.api.v1 import health, pipeline_routes, agent_routes, papers
+from app.api.v1 import agent_routes, health, papers, pipeline_routes
 
 api_router = APIRouter(prefix="/api/v1")
 

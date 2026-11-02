@@ -1,15 +1,18 @@
 """Stage 1: Query Parsing.
 
-Parses the raw user query into a structured format for downstream stages.
+Parses the raw user query into a typed ``QueryContract`` for downstream stages.
 Extracts: keywords, research areas, year range, intent, etc.
 
-For the skeleton, this is a stub that does basic keyword extraction.
+For the skeleton, this is a stub that does basic keyword extraction + intent
+classification; the extracted keywords stand in for ``methods`` until a real
+topic/method split exists.
 """
 from __future__ import annotations
 
 import re
 
 from app.core.logging import get_logger
+from app.domain.contract import Intent, QueryContract
 from app.pipeline.base import BaseStage
 from app.pipeline.context import PipelineContext
 
@@ -26,22 +29,15 @@ class QueryParseStage(BaseStage):
         query = ctx.query.strip()
         logger.info(f"Parsing query: {query[:100]}")
 
-        # Basic keyword extraction (stub: split and clean)
         keywords = _extract_keywords(query)
+        intent = Intent(_classify_intent(query))
 
-        # Simple intent classification
-        intent = _classify_intent(query)
-
-        parsed = {
-            "raw_query": query,
-            "keywords": keywords,
-            "intent": intent,
-            "query_terms": keywords[:5],  # top keywords for search
-            "year_range": None,  # not parsed in stub
-        }
-
-        ctx.set_state("parsed_query", parsed)
-        logger.info(f"Query parsed: {len(keywords)} keywords, intent={intent}")
+        ctx.state.contract = QueryContract(
+            topic=query,
+            methods=keywords[:5],  # stub: top keywords as coarse method cues
+            intent=intent,
+        )
+        logger.info(f"Query parsed: {len(keywords)} keywords, intent={intent.value}")
 
 
 def _extract_keywords(query: str) -> list[str]:

@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any
 
 from app.core.ids import new_id, new_trace_id
 from app.llm.base import ChatMessage, Usage
@@ -21,9 +21,9 @@ class ToolCall:
     name: str
     arguments: dict[str, Any] = field(default_factory=dict)
     result: Any = None
-    error: Optional[str] = None
+    error: str | None = None
     started_at: datetime = field(default_factory=datetime.utcnow)
-    finished_at: Optional[datetime] = None
+    finished_at: datetime | None = None
 
     @property
     def duration_ms(self) -> float:
@@ -39,7 +39,7 @@ class PlanStep:
     index: int
     description: str
     status: str = "pending"  # pending | in_progress | completed | failed
-    tool: Optional[str] = None
+    tool: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -83,10 +83,10 @@ class AgentState:
     usage: Usage = field(default_factory=Usage)
     trace_id: str = field(default_factory=new_trace_id)
     started_at: datetime = field(default_factory=datetime.utcnow)
-    finished_at: Optional[datetime] = None
+    finished_at: datetime | None = None
     status: str = "pending"  # pending | running | completed | failed | cancelled
     final_answer: str = ""
-    error: Optional[str] = None
+    error: str | None = None
     max_steps: int = 5
     stop_reason: str = ""
 

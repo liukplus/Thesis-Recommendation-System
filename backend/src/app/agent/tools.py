@@ -7,12 +7,18 @@ Tools are functions the agent can call. Each tool has:
 - handler: async function that executes the tool
 
 The TOOL_REGISTRY is the central registry of all available tools.
+
+The agent is a *bounded wrapper* (D2): its single research action is ``run_research``,
+which delegates to the deterministic 8-stage pipeline rather than performing free-form
+searches itself. ``get_help`` is a harmless meta-tool describing the available tools.
 """
+
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, field
-from typing import Any, Awaitable, Callable, Optional, Type
+from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -37,7 +43,7 @@ class ToolSpec:
 
     name: str
     description: str
-    input_schema: Type[BaseModel]
+    input_schema: type[BaseModel]
     handler: Callable[..., Awaitable[Any]]
     category: str = "general"
 
@@ -81,7 +87,7 @@ class ToolRegistry:
         self._tools[tool.name] = tool
         logger.debug(f"Tool registered: {tool.name} ({tool.category})")
 
-    def get(self, name: str) -> Optional[ToolSpec]:
+    def get(self, name: str) -> ToolSpec | None:
         """Get a tool by name.
 
         Args:
@@ -125,7 +131,7 @@ class ToolRegistry:
         self,
         tool_name: str,
         arguments: dict[str, Any] | str,
-        context: Optional[dict[str, Any]] = None,
+        context: dict[str, Any] | None = None,
     ) -> Any:
         """Execute a tool by name.
 
@@ -149,17 +155,13 @@ class ToolRegistry:
             try:
                 arguments = json.loads(arguments)
             except json.JSONDecodeError as e:
-                raise ValidationError(
-                    f"Invalid JSON arguments for tool '{tool_name}': {e}"
-                )
+                raise ValidationError(f"Invalid JSON arguments for tool '{tool_name}': {e}") from e
 
         # Validate arguments against schema
         try:
             params = tool.input_schema.model_validate(arguments)
         except Exception as e:
-            raise ValidationError(
-                f"Invalid arguments for tool '{tool_name}': {e}"
-            ) from e
+            raise ValidationError(f"Invalid arguments for tool '{tool_name}': {e}") from e
 
         # Execute handler
         logger.info(f"Executing tool: {tool_name}")
@@ -176,21 +178,10 @@ TOOL_REGISTRY = ToolRegistry()
 # =========================================================================
 
 
-class EchoParams(BaseModel):
-    """Parameters for the echo tool."""
-
-    message: str = Field(..., description="The message to echo back.")
-
-
-async def echo_handler(params: EchoParams, context: dict) -> str:
-    """Echo back the input message. Useful for testing."""
-    return f"Echo: {params.message}"
-
-
 class GetHelpParams(BaseModel):
     """Parameters for the get_help tool."""
 
-    topic: Optional[str] = Field(default=None, description="Optional topic to get help about.")
+    topic: str | None = Field(default=None, description="Optional topic to get help about.")
 
 
 async def get_help_handler(params: GetHelpParams, context: dict) -> str:
@@ -204,99 +195,54 @@ async def get_help_handler(params: GetHelpParams, context: dict) -> str:
         "If you can answer the question directly, just provide the final answer."
     )
     if params.topic:
-        lines.append(f"\nHelp for topic '{params.topic}': "
-                     f"Use the search_stub tool to find more information.")
+        lines.append(
+            f"\nHelp for topic '{params.topic}': Use the run_research tool to find "
+            f"and synthesize relevant papers."
+        )
     return "\n".join(lines)
 
 
-class SearchStubParams(BaseModel):
-    """Parameters for the search stub tool."""
+class RunResearchParams(BaseModel):
+    """Arguments for the ``run_research`` delegate tool."""
 
-    query: str = Field(..., min_length=1, max_length=500, description="Search query.")
-    max_results: int = Field(default=5, ge=1, le=20, description="Max number of results.")
-
-
-async def search_stub_handler(params: SearchStubParams, context: dict) -> list[dict]:
-    """Search for academic papers (stub implementation). Returns mock results."""
-    results = []
-    for i in range(params.max_results):
-        results.append({
-            "id": f"stub_{i+1}",
-            "title": f"Paper about {params.query} - Study {i+1}",
-            "authors": f"Author {i+1}A, Author {i+1}B",
-            "year": 2024 - i,
-            "venue": "Journal of Computer Science Research",
-            "abstract": f"This paper explores {params.query} from a novel perspective. "
-                        f"We propose a method that improves performance by {10 + i*5}% "
-                        f"on standard benchmarks. The approach is validated through "
-                        f"extensive experiments on multiple datasets.",
-            "score": round(0.95 - i * 0.08, 3),
-        })
-    return results
+    query: str = Field(..., min_length=1, max_length=2000, description="Research question.")
 
 
-class SummarizeStubParams(BaseModel):
-    """Parameters for the summarize stub tool."""
+async def run_research_handler(params: RunResearchParams, context: dict) -> dict:
+    """Run the deterministic research pipeline and return its typed result.
 
-    text: str = Field(..., min_length=10, description="Text to summarize.")
-    style: str = Field(default="concise", description="Summary style: concise, detailed, bullet_points")
+    This is the agent's single research action: it delegates to the fixed 8-stage
+    pipeline (D2) rather than performing free-form searches itself.
+    """
+    from app.domain.pipeline import PipelineData
+    from app.graphs.pipeline import build_pipeline_graph, serialize_pipeline_state
 
-
-async def summarize_stub_handler(params: SummarizeStubParams, context: dict) -> str:
-    """Summarize text (stub implementation). Returns a short summary."""
-    text = params.text
-    if len(text) > 200:
-        summary_text = text[:180] + "..."
-    else:
-        summary_text = text
-
-    if params.style == "bullet_points":
-        return (
-            f"• Key point 1: {summary_text[:80]}\n"
-            f"• Key point 2: {summary_text[80:160]}\n"
-            f"• Key point 3: Additional context from the source material"
-        )
-    elif params.style == "detailed":
-        return (
-            f"Detailed summary of the provided text ({len(text)} chars):\n\n"
-            f"The text discusses: {summary_text}\n\n"
-            f"Main ideas are captured above. Full text available upon request."
-        )
-    else:  # concise
-        return f"Summary: {summary_text}"
+    graph = build_pipeline_graph()
+    initial = {"query": params.query, "data": PipelineData(), "stage_results": []}
+    state = await graph.ainvoke(initial)
+    return serialize_pipeline_state(state)
 
 
 # Register built-in tools
-TOOL_REGISTRY.register(ToolSpec(
-    name="get_help",
-    description="Get help about available tools and how to use them. "
-                "Use this when you're unsure what tools are available or how to proceed.",
-    input_schema=GetHelpParams,
-    handler=get_help_handler,
-    category="utility",
-))
+TOOL_REGISTRY.register(
+    ToolSpec(
+        name="get_help",
+        description="Get help about available tools and how to use them. "
+        "Use this when you're unsure what tools are available or how to proceed.",
+        input_schema=GetHelpParams,
+        handler=get_help_handler,
+        category="utility",
+    )
+)
 
-TOOL_REGISTRY.register(ToolSpec(
-    name="echo",
-    description="Echo back a message. Useful for testing and debugging.",
-    input_schema=EchoParams,
-    handler=echo_handler,
-    category="utility",
-))
-
-TOOL_REGISTRY.register(ToolSpec(
-    name="search_stub",
-    description="Search for academic papers on a given topic. "
-                "Returns a list of paper results with titles, authors, and abstracts.",
-    input_schema=SearchStubParams,
-    handler=search_stub_handler,
-    category="research",
-))
-
-TOOL_REGISTRY.register(ToolSpec(
-    name="summarize_stub",
-    description="Summarize a piece of text. Supports concise, detailed, and bullet point styles.",
-    input_schema=SummarizeStubParams,
-    handler=summarize_stub_handler,
-    category="research",
-))
+TOOL_REGISTRY.register(
+    ToolSpec(
+        name="run_research",
+        description="Run the full research pipeline on a question: parse the query, "
+        "recall papers, fuse and rerank them, extract evidence, generate a cited survey, "
+        "verify citations, and export. Returns the answer plus ranked papers.",
+        input_schema=RunResearchParams,
+        handler=run_research_handler,
+        category="research",
+    )
+)

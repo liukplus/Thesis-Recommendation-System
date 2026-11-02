@@ -1,11 +1,16 @@
-"""Unit tests for the pipeline framework."""
+"""Unit tests for the pipeline framework (compiled graph)."""
 from __future__ import annotations
 
 import pytest
-
-from app.pipeline.context import PipelineContext
+from app.domain.paper import Paper
+from app.domain.pipeline import PipelineData
+from app.graphs.pipeline import (
+    build_pipeline_graph,
+    default_pipeline_stages,
+    serialize_pipeline_state,
+)
 from app.pipeline.base import BaseStage
-from app.pipeline.orchestrator import PipelineOrchestrator
+from app.pipeline.context import PipelineContext
 
 
 class SuccessStage(BaseStage):
@@ -15,7 +20,7 @@ class SuccessStage(BaseStage):
         super().__init__(name=name)
 
     async def _execute(self, ctx: PipelineContext) -> None:
-        ctx.set_state(f"{self.name}_ran", True)
+        ctx.state.recalled.append(Paper(paper_id=self.name, title=self.name))
 
 
 class FailingStage(BaseStage):
@@ -28,131 +33,75 @@ class FailingStage(BaseStage):
         raise ValueError("Intentional test failure")
 
 
-class SlowStage(BaseStage):
-    """A stage that takes some time (for cancellation tests)."""
-
-    def __init__(self, name: str = "slow", delay: float = 0.1) -> None:
-        super().__init__(name=name)
-        self.delay = delay
-
-    async def _execute(self, ctx: PipelineContext) -> None:
-        import asyncio
-
-        await asyncio.sleep(self.delay)
-        ctx.set_state("slow_ran", True)
-
-
 @pytest.mark.asyncio
 async def test_pipeline_runs_all_stages():
-    """Pipeline should run all stages in order."""
+    """Pipeline graph should run all stages in order."""
     stages = [SuccessStage("s1"), SuccessStage("s2"), SuccessStage("s3")]
-    pipeline = PipelineOrchestrator(stages)
-    ctx = PipelineContext(query="test query")
+    graph = build_pipeline_graph(stages)
 
-    ctx = await pipeline.run(ctx)
+    state = await graph.ainvoke(
+        {"query": "test query", "data": PipelineData(), "stage_results": []}
+    )
 
-    assert ctx.success is True
-    assert len(ctx.stage_results) == 3
-    assert ctx.get_state("s1_ran") is True
-    assert ctx.get_state("s2_ran") is True
-    assert ctx.get_state("s3_ran") is True
-    assert ctx.finished_at is not None
-    assert ctx.total_duration_ms >= 0
+    results = state["stage_results"]
+    assert len(results) == 3
+    assert [r["name"] for r in results] == ["s1", "s2", "s3"]
+    assert [p.paper_id for p in state["data"].recalled] == ["s1", "s2", "s3"]
+
+
+def test_pipeline_stage_names():
+    """Default pipeline stages should be the 8 well-known names, in order."""
+    names = [s.name for s in default_pipeline_stages()]
+    assert names == [
+        "query_parse",
+        "recall",
+        "fusion",
+        "rerank",
+        "evidence_extraction",
+        "survey_generation",
+        "citation_verification",
+        "export",
+    ]
 
 
 @pytest.mark.asyncio
-async def test_pipeline_stage_names():
-    """Pipeline stage names should be correct."""
-    stages = [SuccessStage("first"), SuccessStage("second")]
-    pipeline = PipelineOrchestrator(stages)
-
-    assert pipeline.stage_names == ["first", "second"]
-
-
-@pytest.mark.asyncio
-async def test_pipeline_failure_stops_on_error():
-    """Pipeline should stop on first error by default."""
+async def test_pipeline_stop_on_error_by_default():
+    """Default semantics: a failed stage aborts the rest of the pipeline."""
     stages = [SuccessStage("s1"), FailingStage("s2"), SuccessStage("s3")]
-    pipeline = PipelineOrchestrator(stages)
-    ctx = PipelineContext(query="test")
+    graph = build_pipeline_graph(stages)
 
-    from app.core.exceptions import PipelineFailedError
+    state = await graph.ainvoke(
+        {"query": "test", "data": PipelineData(), "stage_results": []}
+    )
 
-    with pytest.raises(PipelineFailedError) as exc_info:
-        await pipeline.run(ctx)
-
-    assert exc_info.value.stage == "s2"
-    assert len(ctx.stage_results) == 2  # s1 ran, s2 failed, s3 didn't run
-    assert ctx.stage_results[0].success is True
-    assert ctx.stage_results[1].success is False
-    assert ctx.stage_results[1].error == "Intentional test failure"
-    assert ctx.get_state("s3_ran") is None  # s3 never ran
+    results = state["stage_results"]
+    assert [r["name"] for r in results] == ["s1", "s2"]
+    assert results[1]["success"] is False
+    assert serialize_pipeline_state(state)["success"] is False
 
 
 @pytest.mark.asyncio
 async def test_pipeline_continue_on_error():
-    """Pipeline with stop_on_error=False should continue after failure."""
+    """With ``stop_on_error=False`` the failure is recorded but stages continue."""
     stages = [SuccessStage("s1"), FailingStage("s2"), SuccessStage("s3")]
-    pipeline = PipelineOrchestrator(stages)
-    ctx = PipelineContext(query="test")
+    graph = build_pipeline_graph(stages, stop_on_error=False)
 
-    ctx = await pipeline.run(ctx, stop_on_error=False)
+    state = await graph.ainvoke(
+        {"query": "test", "data": PipelineData(), "stage_results": []}
+    )
+    data = serialize_pipeline_state(state)
 
-    assert len(ctx.stage_results) == 3
-    assert ctx.stage_results[0].success is True
-    assert ctx.stage_results[1].success is False
-    assert ctx.stage_results[2].success is True
-    assert ctx.success is False  # overall not successful
-    assert ctx.failed_stage == "s2"
+    results = state["stage_results"]
+    assert len(results) == 3
+    assert results[0]["success"] is True
+    assert results[1]["success"] is False
+    assert results[1]["error"] == "Intentional test failure"
+    assert results[2]["success"] is True
+    assert data["success"] is False
 
 
-@pytest.mark.asyncio
-async def test_pipeline_context_trace_id():
+def test_pipeline_context_trace_id():
     """Pipeline context should have a trace ID."""
     ctx = PipelineContext(query="test")
     assert ctx.trace_id is not None
     assert len(ctx.trace_id) == 32  # 16 bytes hex = 32 chars
-
-
-@pytest.mark.asyncio
-async def test_pipeline_progress_callback():
-    """Progress callback should be called after each stage."""
-    stages = [SuccessStage("s1"), SuccessStage("s2"), SuccessStage("s3")]
-    pipeline = PipelineOrchestrator(stages)
-    ctx = PipelineContext(query="test")
-
-    callbacks: list[tuple[str, int, int]] = []
-
-    async def progress_cb(stage_name: str, idx: int, total: int, _ctx):
-        callbacks.append((stage_name, idx, total))
-
-    ctx = await pipeline.run(ctx, progress_callback=progress_cb)
-
-    assert len(callbacks) == 3
-    assert callbacks[0] == ("s1", 1, 3)
-    assert callbacks[1] == ("s2", 2, 3)
-    assert callbacks[2] == ("s3", 3, 3)
-
-
-@pytest.mark.asyncio
-async def test_pipeline_cancellation():
-    """Cancelled pipeline should stop early."""
-    stages = [SuccessStage("s1"), SlowStage("slow"), SuccessStage("s2")]
-    pipeline = PipelineOrchestrator(stages)
-    ctx = PipelineContext(query="test")
-
-    # Cancel before the slow stage runs
-    async def cancel_after_first(
-        stage_name: str, idx: int, total: int, pctx: PipelineContext
-    ):
-        if idx == 1:  # after first stage
-            pctx.cancel()
-
-    ctx = await pipeline.run(ctx, progress_callback=cancel_after_first)
-
-    assert ctx.cancelled is True
-    # s1 completed, slow should not have started (cancelled before)
-    # Actually the cancellation is checked before each stage, so s1 runs,
-    # then cancelled, so slow and s2 don't run
-    assert len(ctx.stage_results) == 1
-    assert ctx.stage_results[0].stage_name == "s1"

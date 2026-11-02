@@ -1,7 +1,7 @@
 """Paper repository with paper-specific queries."""
 from __future__ import annotations
 
-from typing import Optional, Sequence
+from collections.abc import Sequence
 
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
@@ -42,7 +42,7 @@ class PaperRepository(BaseRepository[Paper]):
         result = session.execute(stmt)
         return result.scalars().all()
 
-    def get_by_doi(self, session: Session, doi: str) -> Optional[Paper]:
+    def get_by_doi(self, session: Session, doi: str) -> Paper | None:
         """Get a paper by its DOI.
 
         Args:

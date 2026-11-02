@@ -5,8 +5,8 @@ Uses SQLite with WAL mode for development, configurable for Postgres.
 """
 from __future__ import annotations
 
-from contextlib import asynccontextmanager, contextmanager
-from typing import AsyncIterator, Iterator, Optional
+from collections.abc import Iterator
+from contextlib import contextmanager
 
 from sqlalchemy import create_engine, event
 from sqlalchemy.engine import Engine
@@ -19,8 +19,8 @@ from app.db.base import Base
 
 logger = get_logger(__name__)
 
-_engine: Optional[Engine] = None
-_session_factory: Optional[sessionmaker[Session]] = None
+_engine: Engine | None = None
+_session_factory: sessionmaker[Session] | None = None
 
 
 def _setup_sqlite_wal(engine: Engine) -> None:

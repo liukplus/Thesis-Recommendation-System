@@ -12,8 +12,8 @@ If any guardrail is triggered, the agent stops with an appropriate reason.
 from __future__ import annotations
 
 from collections import defaultdict
-from dataclasses import dataclass, field
-from typing import Any, Optional
+from dataclasses import dataclass
+from typing import Any
 
 from app.core.logging import get_logger
 

@@ -2,12 +2,12 @@
 from __future__ import annotations
 
 import pytest
-
 from app.agent.guardrails import GuardrailController
-from app.agent.tools import TOOL_REGISTRY
-from app.agent.state import AgentState, PlanStep
 from app.agent.planner import PlanFirstPlanner
-from app.agent.loop import AgentRuntime
+from app.agent.state import AgentState, PlanStep
+from app.agent.tools import TOOL_REGISTRY
+from app.graphs.agent import build_agent_graph, serialize_agent_state
+from app.graphs.llm import get_chat_model
 
 
 class TestGuardrails:
@@ -96,30 +96,25 @@ class TestToolRegistry:
     def test_builtin_tools_registered(self):
         """Built-in tools should be registered."""
         assert TOOL_REGISTRY.has("get_help")
-        assert TOOL_REGISTRY.has("echo")
-        assert TOOL_REGISTRY.has("search_stub")
-        assert TOOL_REGISTRY.has("summarize_stub")
+        assert TOOL_REGISTRY.has("run_research")
 
     def test_tool_count(self):
-        """Should have 4 built-in tools."""
-        assert len(TOOL_REGISTRY.tool_names) == 4
+        """Should have 2 built-in tools."""
+        assert len(TOOL_REGISTRY.tool_names) == 2
 
     @pytest.mark.asyncio
-    async def test_echo_tool(self):
-        """Echo tool should return the message."""
-        result = await TOOL_REGISTRY.execute("echo", {"message": "hello world"})
-        assert "hello world" in result
+    async def test_get_help_tool(self):
+        """get_help should list the available tools."""
+        result = await TOOL_REGISTRY.execute("get_help", {})
+        assert "run_research" in result
 
     @pytest.mark.asyncio
-    async def test_search_stub_tool(self):
-        """Search stub should return mock results."""
-        result = await TOOL_REGISTRY.execute(
-            "search_stub", {"query": "AI", "max_results": 3}
-        )
-        assert isinstance(result, list)
-        assert len(result) == 3
-        assert "title" in result[0]
-        assert "AI" in result[0]["title"]
+    async def test_run_research_tool(self):
+        """run_research should delegate to the pipeline and return a typed result."""
+        result = await TOOL_REGISTRY.execute("run_research", {"query": "deep learning"})
+        assert isinstance(result, dict)
+        assert "answer" in result
+        assert "papers" in result
 
     def test_unknown_tool_raises(self):
         """Executing unknown tool should raise ValidationError."""
@@ -133,7 +128,7 @@ class TestToolRegistry:
     def test_openai_format(self):
         """Tools should have valid OpenAI format."""
         tools = TOOL_REGISTRY.to_openai_format()
-        assert len(tools) == 4
+        assert len(tools) == 2
         for t in tools:
             assert t["type"] == "function"
             assert "name" in t["function"]
@@ -152,8 +147,8 @@ class TestPlanner:
 
         assert len(steps) >= 3
         assert steps[0].index == 1
-        # Should have a search step
-        assert any(s.tool == "search_stub" for s in steps)
+        # Should have a research step
+        assert any(s.tool == "run_research" for s in steps)
         # Last step should be synthesis
         assert steps[-1].status == "pending"
 
@@ -194,82 +189,64 @@ class TestAgentState:
         """Plan steps should serialize correctly."""
         state = AgentState(goal="test")
         state.plan = [
-            PlanStep(index=1, description="Step one", tool="search_stub"),
+            PlanStep(index=1, description="Step one", tool="run_research"),
             PlanStep(index=2, description="Step two"),
         ]
 
         plan_dict = state.to_dict()["plan"]
         assert len(plan_dict) == 2
-        assert plan_dict[0]["tool"] == "search_stub"
+        assert plan_dict[0]["tool"] == "run_research"
 
 
-class TestAgentRuntime:
-    """Tests for AgentRuntime (rule-based mode, no LLM)."""
+class TestAgentGraph:
+    """Tests for the compiled agent graph in rule-based mode (no LLM client)."""
 
-    @pytest.mark.asyncio
+    async def _run_graph(
+        self,
+        goal: str,
+        *,
+        max_steps: int = 3,
+        plan_first: bool = False,
+    ) -> dict:
+        graph = build_agent_graph(
+            get_chat_model(None),
+            max_steps=max_steps,
+            plan_first=plan_first,
+        )
+        state = await graph.ainvoke(
+            {"goal": goal, "messages": [], "task_id": "agent_test"}
+        )
+        return serialize_agent_state(state)
+
     async def test_agent_simple_greeting(self):
         """Agent should respond to a simple greeting."""
-        runtime = AgentRuntime(
-            llm=None,
-            tools=TOOL_REGISTRY,
-            max_steps=3,
-            plan_first=False,
-        )
+        data = await self._run_graph("hello")
 
-        state = await runtime.run("hello")
+        assert data["status"] == "completed"
+        assert len(data["final_answer"]) > 0
+        assert data["steps"] >= 1
 
-        assert state.status == "completed"
-        assert len(state.final_answer) > 0
-        assert state.step_idx >= 1
+    async def test_agent_uses_research_tool(self):
+        """Agent should delegate to run_research for research queries."""
+        data = await self._run_graph("tell me about machine learning papers")
 
-    @pytest.mark.asyncio
-    async def test_agent_uses_search_tool(self):
-        """Agent should use the search tool for research queries."""
-        runtime = AgentRuntime(
-            llm=None,
-            tools=TOOL_REGISTRY,
-            max_steps=3,
-            plan_first=False,
-        )
+        assert data["status"] == "completed"
+        assert any(tc["name"] == "run_research" for tc in data["tool_calls"])
+        assert len(data["final_answer"]) > 50
 
-        state = await runtime.run("tell me about machine learning papers")
-
-        assert state.status == "completed"
-        # Should have used the search tool
-        assert len(state.tool_calls) >= 1
-        assert any(tc.name == "search_stub" for tc in state.tool_calls)
-        # Final answer should mention papers/results
-        assert len(state.final_answer) > 50
-
-    @pytest.mark.asyncio
     async def test_agent_respects_max_steps(self):
         """Agent should not exceed max_steps."""
-        runtime = AgentRuntime(
-            llm=None,
-            tools=TOOL_REGISTRY,
-            max_steps=1,
-            plan_first=False,
-        )
+        data = await self._run_graph("deep learning research", max_steps=1)
 
-        state = await runtime.run("deep learning research")
+        assert data["steps"] <= 1
 
-        assert state.step_idx <= 1  # should respect max steps
-
-    @pytest.mark.asyncio
     async def test_agent_plan_first(self):
         """Agent with plan_first should generate a plan."""
-        runtime = AgentRuntime(
-            llm=None,
-            tools=TOOL_REGISTRY,
-            max_steps=3,
-            plan_first=True,
-        )
+        data = await self._run_graph("survey on transformers", plan_first=True)
 
-        state = await runtime.run("survey on transformers")
-
-        assert state.status == "completed"
-        assert len(state.plan) >= 3
-        assert state.plan[0].index == 1
+        assert data["status"] == "completed"
+        assert len(data["plan"]) >= 3
+        assert data["plan"][0]["index"] == 1
 
 
 def _make_state(step_idx: int = 0):

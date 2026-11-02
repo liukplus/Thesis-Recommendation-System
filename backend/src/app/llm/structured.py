@@ -6,7 +6,7 @@ retry if validation fails.
 """
 from __future__ import annotations
 
-from typing import Type, TypeVar
+from typing import TypeVar
 
 from pydantic import BaseModel, ValidationError
 
@@ -23,7 +23,7 @@ async def complete_structured(
     client: LLMClient,
     system_prompt: str,
     user_prompt: str,
-    output_model: Type[T],
+    output_model: type[T],
     *,
     max_retries: int = 1,
     **chat_kwargs,
@@ -110,7 +110,7 @@ async def complete_structured(
     )
 
 
-def _format_schema_description(model: Type[BaseModel]) -> str:
+def _format_schema_description(model: type[BaseModel]) -> str:
     """Format a Pydantic model's JSON schema as a readable description."""
     schema = model.model_json_schema()
     properties = schema.get("properties", {})

@@ -1,14 +1,15 @@
 """Schemas for task management and pipeline/agent task results."""
+
 from __future__ import annotations
 
 from datetime import datetime
-from enum import Enum
-from typing import Any, Optional
+from enum import StrEnum
+from typing import Any
 
 from pydantic import BaseModel, Field
 
 
-class TaskStatus(str, Enum):
+class TaskStatus(StrEnum):
     """Status of a background task."""
 
     PENDING = "pending"
@@ -18,7 +19,7 @@ class TaskStatus(str, Enum):
     CANCELLED = "cancelled"
 
 
-class TaskType(str, Enum):
+class TaskType(StrEnum):
     """Type of task."""
 
     PIPELINE = "pipeline"
@@ -30,7 +31,7 @@ class TaskCreate(BaseModel):
 
     query: str = Field(..., min_length=1, max_length=2000, description="User query")
     task_type: TaskType = Field(default=TaskType.PIPELINE)
-    max_steps: Optional[int] = Field(default=None, ge=1, le=20)
+    max_steps: int | None = Field(default=None, ge=1, le=20)
     stream: bool = Field(default=False, description="Whether to stream results via SSE")
 
 
@@ -43,10 +44,10 @@ class TaskResponse(BaseModel):
     query: str
     created_at: datetime
     updated_at: datetime
-    result: Optional[dict[str, Any]] = None
-    error: Optional[str] = None
+    result: dict[str, Any] | None = None
+    error: str | None = None
     progress: float = 0.0  # 0.0 to 1.0
-    current_stage: Optional[str] = None
+    current_stage: str | None = None
 
 
 class TaskListResponse(BaseModel):

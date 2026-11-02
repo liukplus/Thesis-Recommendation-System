@@ -1,11 +1,17 @@
 """Stage 2: Multi-source Recall.
 
 Retrieves candidate papers from multiple sources (DB, vector search, external APIs).
-For the skeleton, this is a stub that returns mock data.
+For the skeleton, this is a stub that returns mock data as typed ``Paper`` records
+and records the pass in a ``SearchRecord``.
 """
 from __future__ import annotations
 
+from typing import Any
+
+from app.core.ids import new_id
 from app.core.logging import get_logger
+from app.domain.paper import Paper
+from app.domain.record import SearchRecord
 from app.pipeline.base import BaseStage
 from app.pipeline.context import PipelineContext
 
@@ -19,44 +25,38 @@ class RecallStage(BaseStage):
         super().__init__(name="recall")
 
     async def _execute(self, ctx: PipelineContext) -> None:
-        parsed = ctx.get_state("parsed_query", {})
-        keywords = parsed.get("query_terms", [])
-        query = parsed.get("raw_query", ctx.query)
+        contract = ctx.state.contract
+        keywords = contract.methods if contract else []
+        topic = contract.topic if contract else ctx.query
 
-        logger.info(f"Recalling papers for query: {query[:80]}")
+        logger.info(f"Recalling papers for query: {topic[:80]}")
 
-        # Stub: return mock candidate papers
-        candidates = _generate_mock_candidates(keywords, query)
+        papers = _generate_mock_candidates(keywords, topic)
 
-        # Group by source
-        recalled = {
-            "total": len(candidates),
-            "sources": {
-                "local_db": [c for c in candidates if c["source"] == "local_db"],
-                "semantic": [c for c in candidates if c["source"] == "semantic"],
-                "external": [c for c in candidates if c["source"] == "external"],
-            },
-            "candidates": candidates,
-        }
-
-        ctx.set_state("recalled_papers", recalled)
-        logger.info(f"Recalled {len(candidates)} candidates from 3 sources")
+        ctx.state.recalled = papers
+        ctx.state.search_record = SearchRecord(
+            record_id=new_id("recall"),
+            query_text=topic,
+            result_paper_ids=[p.paper_id for p in papers],
+        )
+        logger.info(f"Recalled {len(papers)} candidates from mock sources")
 
 
-def _generate_mock_candidates(keywords: list[str], query: str) -> list[dict]:
+def _generate_mock_candidates(keywords: list[str], query: str) -> list[Paper]:
     """Generate mock candidate papers for the skeleton.
 
     In production, this would query real data sources.
     """
     kw_str = " ".join(keywords[:3]) if keywords else "machine learning"
 
-    templates = [
+    # Heterogeneous mock rows (str/list/int/float values) -> typed Papers below.
+    templates: list[dict[str, Any]] = [
         {
-            "id": "paper_mock_001",
+            "paper_id": "paper_mock_001",
             "title": f"A Survey of {kw_str.title()} Techniques and Applications",
             "abstract": f"This paper presents a comprehensive survey of recent advances in {kw_str}. "
                         f"We review 150+ papers, categorize approaches, and identify future directions.",
-            "authors": "Alice Wang, Bob Chen, Carol Li",
+            "authors": ["Alice Wang", "Bob Chen", "Carol Li"],
             "year": 2024,
             "venue": "ACM Computing Surveys",
             "citation_count": 156,
@@ -64,11 +64,11 @@ def _generate_mock_candidates(keywords: list[str], query: str) -> list[dict]:
             "score": 0.92,
         },
         {
-            "id": "paper_mock_002",
+            "paper_id": "paper_mock_002",
             "title": f"Novel Approach to {kw_str.title()} Using Deep Neural Networks",
             "abstract": f"We propose a novel deep learning method for {kw_str} that achieves "
                         f"state-of-the-art performance on standard benchmarks.",
-            "authors": "David Zhang, Eva Liu",
+            "authors": ["David Zhang", "Eva Liu"],
             "year": 2024,
             "venue": "NeurIPS",
             "citation_count": 89,
@@ -76,11 +76,11 @@ def _generate_mock_candidates(keywords: list[str], query: str) -> list[dict]:
             "score": 0.87,
         },
         {
-            "id": "paper_mock_003",
+            "paper_id": "paper_mock_003",
             "title": f"Efficient {kw_str.title()} with Limited Data",
             "abstract": f"We address the challenge of {kw_str} in low-resource settings, "
                         f"proposing a data-efficient framework that outperforms baselines by 15%.",
-            "authors": "Frank Zhao, Grace Sun, Henry Wu",
+            "authors": ["Frank Zhao", "Grace Sun", "Henry Wu"],
             "year": 2023,
             "venue": "ICML",
             "citation_count": 234,
@@ -88,11 +88,11 @@ def _generate_mock_candidates(keywords: list[str], query: str) -> list[dict]:
             "score": 0.81,
         },
         {
-            "id": "paper_mock_004",
+            "paper_id": "paper_mock_004",
             "title": f"Towards Generalizable {kw_str.title()} Models",
             "abstract": f"This work studies generalization in {kw_str} models across domains. "
                         f"We introduce a new benchmark and propose domain adaptation techniques.",
-            "authors": "Ivy Huang, Jack Ma",
+            "authors": ["Ivy Huang", "Jack Ma"],
             "year": 2024,
             "venue": "ICLR",
             "citation_count": 45,
@@ -100,11 +100,11 @@ def _generate_mock_candidates(keywords: list[str], query: str) -> list[dict]:
             "score": 0.78,
         },
         {
-            "id": "paper_mock_005",
+            "paper_id": "paper_mock_005",
             "title": f"A Practical Guide to {kw_str.title()} for Industrial Applications",
             "abstract": f"We present practical considerations for deploying {kw_str} in production, "
                         f"including latency optimization and cost analysis.",
-            "authors": "Karen Xu, Leo Qian, Mia Yang",
+            "authors": ["Karen Xu", "Leo Qian", "Mia Yang"],
             "year": 2023,
             "venue": "KDD",
             "citation_count": 112,
@@ -113,4 +113,4 @@ def _generate_mock_candidates(keywords: list[str], query: str) -> list[dict]:
         },
     ]
 
-    return templates
+    return [Paper(**t) for t in templates]

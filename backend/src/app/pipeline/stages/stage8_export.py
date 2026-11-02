@@ -2,7 +2,8 @@
 
 Exports the final result in various formats (markdown, JSON, BibTeX, etc.).
 
-For the skeleton, this is a stub that produces markdown and JSON.
+For the skeleton, this is a stub that produces markdown, BibTeX and JSON from the
+verified survey and the ranked paper list.
 """
 from __future__ import annotations
 
@@ -10,6 +11,8 @@ import json
 from datetime import datetime
 
 from app.core.logging import get_logger
+from app.domain.export import Export
+from app.domain.paper import Paper
 from app.pipeline.base import BaseStage
 from app.pipeline.context import PipelineContext
 
@@ -23,32 +26,27 @@ class ExportStage(BaseStage):
         super().__init__(name="export")
 
     async def _execute(self, ctx: PipelineContext) -> None:
-        answer_data = ctx.get_state("generated_answer", {})
-        answer = answer_data.get("answer", "")
-        reranked = ctx.get_state("reranked_papers", {})
-        papers = reranked.get("papers", [])
+        verified = ctx.state.verified
+        answer = verified.answer if verified else ""
+        papers = ctx.state.ranked
 
         logger.info("Exporting results")
 
-        # Generate export formats
         markdown = _export_markdown(ctx, answer, papers)
         bibtex = _export_bibtex(papers)
         json_export = _export_json(ctx, answer, papers)
 
-        result = {
-            "formats": {
+        ctx.state.exports = Export(
+            formats={
                 "markdown": markdown,
                 "bibtex": bibtex,
                 "json": json_export,
             },
-            "paper_count": len(papers),
-        }
-
-        ctx.set_state("export", result)
+        )
         logger.info(f"Export complete: {len(papers)} papers, 3 formats")
 
 
-def _export_markdown(ctx: PipelineContext, answer: str, papers: list[dict]) -> str:
+def _export_markdown(ctx: PipelineContext, answer: str, papers: list[Paper]) -> str:
     """Export results as markdown."""
     timestamp = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
 
@@ -71,60 +69,56 @@ def _export_markdown(ctx: PipelineContext, answer: str, papers: list[dict]) -> s
 ## References
 
 """
-    for i, p in enumerate(papers, 1):
-        authors = p.get("authors", "Unknown")
-        venue = p.get("venue", "")
-        year = p.get("year", "")
-        doi = p.get("doi", "")
-        md += f"[{i}] {authors}. *{p['title']}*. {venue}, {year}.\n"
-        if doi:
-            md += f"    DOI: {doi}\n"
+    for i, paper in enumerate(papers, 1):
+        authors = ", ".join(paper.authors) or "Unknown"
+        md += f"[{i}] {authors}. *{paper.title}*. {paper.venue or ''}, {paper.year or ''}.\n"
+        if paper.doi:
+            md += f"    DOI: {paper.doi}\n"
         md += "\n"
 
     return md
 
 
-def _export_bibtex(papers: list[dict]) -> str:
+def _export_bibtex(papers: list[Paper]) -> str:
     """Export paper list as BibTeX entries."""
     entries = []
-    for p in papers:
-        key = p.get("id", "unknown").replace("paper_", "")
-        authors = p.get("authors", "Unknown").replace(",", " and")
-        title = p.get("title", "")
-        venue = p.get("venue", "")
-        year = p.get("year", "")
-        doi = p.get("doi", "")
+    for paper in papers:
+        key = paper.paper_id.replace("paper_", "")
+        authors = ", ".join(paper.authors).replace(",", " and") if paper.authors else "Unknown"
 
         entry = f"@article{{{key},\n"
-        entry += f"  title = {{{title}}},\n"
+        entry += f"  title = {{{paper.title}}},\n"
         entry += f"  author = {{{authors}}},\n"
-        entry += f"  journal = {{{venue}}},\n"
-        entry += f"  year = {{{year}}},\n"
-        if doi:
-            entry += f"  doi = {{{doi}}},\n"
-        entry += f"}}\n"
+        entry += f"  journal = {{{paper.venue or ''}}},\n"
+        entry += f"  year = {{{paper.year or ''}}},\n"
+        if paper.doi:
+            entry += f"  doi = {{{paper.doi}}},\n"
+        entry += "}\n"
         entries.append(entry)
 
     return "\n".join(entries)
 
 
-def _export_json(ctx: PipelineContext, answer: str, papers: list[dict]) -> str:
+def _export_json(ctx: PipelineContext, answer: str, papers: list[Paper]) -> str:
     """Export results as JSON string."""
+    # Under the compiled graph a fresh context is rebuilt per node, so aggregate
+    # timing is the sum of recorded per-stage durations (see graphs/pipeline.py).
+    total_duration_ms = sum(r.duration_ms for r in ctx.stage_results)
     data = {
         "query": ctx.query,
         "trace_id": ctx.trace_id,
         "answer": answer,
         "success": ctx.success,
-        "total_duration_ms": round(ctx.total_duration_ms, 2),
+        "total_duration_ms": round(total_duration_ms, 2),
         "papers": [
             {
-                "id": p.get("id"),
-                "title": p.get("title"),
-                "authors": p.get("authors", "").split(", ") if p.get("authors") else [],
-                "venue": p.get("venue"),
-                "year": p.get("year"),
-                "doi": p.get("doi"),
-                "score": p.get("rerank_score", p.get("score")),
+                "id": p.paper_id,
+                "title": p.title,
+                "authors": p.authors,
+                "venue": p.venue,
+                "year": p.year,
+                "doi": p.doi,
+                "score": p.rerank_score if p.rerank_score is not None else p.score,
             }
             for p in papers
         ],

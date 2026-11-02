@@ -3,11 +3,13 @@
 Fuses results from multiple recall sources using RRF (Reciprocal Rank Fusion),
 removes duplicates by DOI/title similarity, and expands with citation context.
 
-For the skeleton, this is a stub that does basic dedup and re-ranking.
+For the skeleton, this is a stub that does basic dedup and re-ranking over typed
+``Paper`` records.
 """
 from __future__ import annotations
 
 from app.core.logging import get_logger
+from app.domain.paper import Paper
 from app.pipeline.base import BaseStage
 from app.pipeline.context import PipelineContext
 
@@ -21,86 +23,67 @@ class FusionStage(BaseStage):
         super().__init__(name="fusion")
 
     async def _execute(self, ctx: PipelineContext) -> None:
-        recalled = ctx.get_state("recalled_papers", {})
-        candidates = recalled.get("candidates", [])
+        papers = ctx.state.recalled
+        logger.info(f"Fusing {len(papers)} candidates")
 
-        logger.info(f"Fusing {len(candidates)} candidates")
-
-        # Stub: simple dedup by id and sort by score
-        fused = _fuse_rrf(candidates)
+        fused = _fuse_rrf(papers)
         deduped = _deduplicate(fused)
 
-        result = {
-            "total_before": len(candidates),
-            "total_after": len(deduped),
-            "duplicates_removed": len(candidates) - len(deduped),
-            "papers": deduped,
-        }
-
-        ctx.set_state("fused_papers", result)
+        ctx.state.fused = deduped
         logger.info(
-            f"Fusion complete: {len(candidates)} → {len(deduped)} papers "
-            f"({len(candidates) - len(deduped)} dupes removed)"
+            f"Fusion complete: {len(papers)} → {len(deduped)} papers "
+            f"({len(papers) - len(deduped)} dupes removed)"
         )
 
 
-def _fuse_rrf(candidates: list[dict], k: int = 60) -> list[dict]:
+def _fuse_rrf(candidates: list[Paper], k: int = 60) -> list[Paper]:
     """Reciprocal Rank Fusion (RRF) — stub implementation.
 
-    Since our mock data comes from different sources with scores,
-    we use a simplified RRF based on per-source rankings.
+    Papers are grouped by source and ranked by recall score within each source;
+    each paper's RRF score is the sum of ``1 / (k + rank)`` across sources.
 
     Args:
-        candidates: List of candidate papers with 'source' and 'score'.
+        candidates: Candidate papers with ``source`` and ``score`` set.
         k: RRF constant (typically 60).
 
     Returns:
-        Papers with fused scores, sorted by fused score descending.
+        Papers with ``fused_score`` set, sorted by fused score descending.
     """
-    # Group by source
-    sources: dict[str, list[dict]] = {}
-    for c in candidates:
-        src = c.get("source", "unknown")
-        sources.setdefault(src, []).append(c)
+    sources: dict[str, list[Paper]] = {}
+    for paper in candidates:
+        sources.setdefault(paper.source or "unknown", []).append(paper)
 
-    # Sort each source by score
-    for src in sources:
-        sources[src].sort(key=lambda x: x.get("score", 0), reverse=True)
+    # Sort each source by recall score (descending).
+    for src_papers in sources.values():
+        src_papers.sort(key=lambda p: p.score or 0, reverse=True)
 
-    # Compute RRF scores
     rrf_scores: dict[str, float] = {}
-    paper_map: dict[str, dict] = {}
+    paper_map: dict[str, Paper] = {}
+    for src_papers in sources.values():
+        for rank, paper in enumerate(src_papers):
+            paper_map[paper.paper_id] = paper
+            rrf_scores[paper.paper_id] = rrf_scores.get(paper.paper_id, 0.0) + 1.0 / (k + rank + 1)
 
-    for src, papers in sources.items():
-        for rank, paper in enumerate(papers):
-            pid = paper["id"]
-            paper_map[pid] = paper
-            # RRF formula: 1 / (k + rank)
-            rrf_scores[pid] = rrf_scores.get(pid, 0) + 1.0 / (k + rank + 1)
+    sorted_ids = sorted(rrf_scores.keys(), key=lambda pid: rrf_scores[pid], reverse=True)
 
-    # Sort by fused score
-    sorted_ids = sorted(rrf_scores.keys(), key=lambda x: rrf_scores[x], reverse=True)
-
-    # Build result with fused score
-    result = []
+    result: list[Paper] = []
     for pid in sorted_ids:
-        paper = dict(paper_map[pid])  # copy
-        paper["fused_score"] = round(rrf_scores[pid], 6)
+        paper = paper_map[pid].model_copy(deep=True)
+        paper.fused_score = round(rrf_scores[pid], 6)
         result.append(paper)
 
     return result
 
 
-def _deduplicate(papers: list[dict]) -> list[dict]:
+def _deduplicate(papers: list[Paper]) -> list[Paper]:
     """Remove duplicate papers (stub: dedup by id only).
 
     Real implementation would use title similarity and DOI matching.
     """
-    seen_ids = set()
-    result = []
-    for p in papers:
-        pid = p.get("id")
-        if pid and pid not in seen_ids:
-            seen_ids.add(pid)
-            result.append(p)
+    seen_ids: set[str] = set()
+    result: list[Paper] = []
+    for paper in papers:
+        if paper.paper_id and paper.paper_id not in seen_ids:
+            seen_ids.add(paper.paper_id)
+            result.append(paper)
     return result

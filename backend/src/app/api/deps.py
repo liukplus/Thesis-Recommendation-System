@@ -2,9 +2,11 @@
 
 Provides dependencies for getting settings, database sessions, LLM clients, etc.
 """
+
 from __future__ import annotations
 
-from typing import Annotated, Optional
+from collections.abc import Iterator
+from typing import Annotated
 
 from fastapi import Depends, Request
 from sqlalchemy.orm import Session
@@ -23,8 +25,8 @@ def get_settings_dep() -> Settings:
 SettingsDep = Annotated[Settings, Depends(get_settings_dep)]
 
 
-def get_db() -> Session:
-    """FastAPI dependency: get a database session.
+def get_db() -> Iterator[Session]:
+    """FastAPI dependency: yield a database session.
 
     Usage:
         @app.get("/items")
@@ -38,7 +40,7 @@ def get_db() -> Session:
 DBSessionDep = Annotated[Session, Depends(get_db)]
 
 
-def get_llm_client(settings: SettingsDep) -> Optional[LLMClient]:
+def get_llm_client(settings: SettingsDep) -> LLMClient | None:
     """FastAPI dependency: get the LLM client.
 
     Returns None if no API key is configured.
@@ -48,10 +50,10 @@ def get_llm_client(settings: SettingsDep) -> Optional[LLMClient]:
     return get_llm(settings)
 
 
-LLMClientDep = Annotated[Optional[LLMClient], Depends(get_llm_client)]
+LLMClientDep = Annotated[LLMClient | None, Depends(get_llm_client)]
 
 
-def get_trace_id_from_header(request: Request) -> Optional[str]:
+def get_trace_id_from_header(request: Request) -> str | None:
     """FastAPI dependency: extract trace ID from request headers.
 
     Checks X-Trace-Id header.
@@ -59,4 +61,4 @@ def get_trace_id_from_header(request: Request) -> Optional[str]:
     return request.headers.get("x-trace-id")
 
 
-TraceIdDep = Annotated[Optional[str], Depends(get_trace_id_from_header)]
+TraceIdDep = Annotated[str | None, Depends(get_trace_id_from_header)]

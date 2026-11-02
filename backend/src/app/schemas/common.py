@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Generic, Optional, TypeVar
+from typing import Any, Generic, TypeVar
 
 from pydantic import BaseModel, Field
 
@@ -58,4 +58,4 @@ class HealthResponse(BaseModel):
 class TraceableResponse(BaseModel):
     """Base response that includes a trace ID."""
 
-    trace_id: Optional[str] = None
+    trace_id: str | None = None

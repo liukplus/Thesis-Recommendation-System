@@ -3,16 +3,16 @@
 The planner generates a high-level plan, then the executor follows it.
 For the skeleton, the planner uses the LLM to generate a plan.
 """
+
 from __future__ import annotations
 
 import json
 import re
-from typing import Optional
 
 from pydantic import BaseModel, Field
 
-from app.core.logging import get_logger
 from app.agent.state import PlanStep
+from app.core.logging import get_logger
 from app.llm.base import ChatMessage, LLMClient
 
 logger = get_logger(__name__)
@@ -23,7 +23,7 @@ class PlanStepSchema(BaseModel):
 
     index: int = Field(..., description="Step number, starting from 1.")
     description: str = Field(..., description="What to do in this step, one sentence.")
-    tool: Optional[str] = Field(default=None, description="Tool to use, if any.")
+    tool: str | None = Field(default=None, description="Tool to use, if any.")
 
 
 class PlanSchema(BaseModel):
@@ -36,10 +36,8 @@ SYSTEM_PROMPT = """You are a research assistant planner. Given a user's goal,
 break it down into a sequence of 3-7 concrete steps to achieve the goal.
 
 Available tools:
-- search_stub: Search for academic papers on a topic
-- summarize_stub: Summarize text in various styles
+- run_research: Run the full research pipeline on a question
 - get_help: Get help about available tools
-- echo: Echo a message (for testing)
 
 Guidelines:
 - Each step should be a single clear action
@@ -51,8 +49,8 @@ Guidelines:
 Respond with a JSON object like:
 {
   "steps": [
-    {"index": 1, "description": "Search for relevant papers", "tool": "search_stub"},
-    {"index": 2, "description": "Summarize the findings", "tool": "summarize_stub"},
+    {"index": 1, "description": "Analyze the query", "tool": null},
+    {"index": 2, "description": "Run the research pipeline", "tool": "run_research"},
     {"index": 3, "description": "Provide final answer", "tool": null}
   ]
 }"""
@@ -66,7 +64,7 @@ class PlanFirstPlanner:
     2. Simple template-based planning (fallback, always works)
     """
 
-    def __init__(self, llm: Optional[LLMClient] = None) -> None:
+    def __init__(self, llm: LLMClient | None = None) -> None:
         """Initialize the planner.
 
         Args:
@@ -115,13 +113,13 @@ class PlanFirstPlanner:
 
         try:
             data = json.loads(content)
-        except json.JSONDecodeError:
+        except json.JSONDecodeError as parse_error:
             # Try to find JSON in the text
             match = re.search(r"\{.*\}", content, re.DOTALL)
             if match:
                 data = json.loads(match.group())
             else:
-                raise ValueError("Could not parse plan as JSON")
+                raise ValueError("Could not parse plan as JSON") from parse_error
 
         plan_data = PlanSchema.model_validate(data)
         steps = [
@@ -144,38 +142,36 @@ class PlanFirstPlanner:
         steps: list[PlanStep] = []
 
         # Step 1: Understand the query
-        steps.append(PlanStep(
-            index=1,
-            description="Analyze the user's query and determine information needs",
-            tool=None,
-        ))
+        steps.append(
+            PlanStep(
+                index=1,
+                description="Analyze the user's query and determine information needs",
+                tool=None,
+            )
+        )
 
-        # Step 2: Search (for research queries)
+        # Step 2: Run the research pipeline (for research queries)
         is_research = any(
-            kw in goal_lower for kw in
-            ["paper", "survey", "research", "study", "论文", "综述", "研究"]
+            kw in goal_lower
+            for kw in ["paper", "survey", "research", "study", "论文", "综述", "研究"]
         )
         if is_research or len(goal) > 10:
-            steps.append(PlanStep(
-                index=len(steps) + 1,
-                description="Search for relevant academic papers",
-                tool="search_stub",
-            ))
-
-        # Step 3: Summarize if we found papers
-        if is_research:
-            steps.append(PlanStep(
-                index=len(steps) + 1,
-                description="Summarize key findings from the search results",
-                tool="summarize_stub",
-            ))
+            steps.append(
+                PlanStep(
+                    index=len(steps) + 1,
+                    description="Run the research pipeline to find relevant papers",
+                    tool="run_research",
+                )
+            )
 
         # Final step: synthesize answer
-        steps.append(PlanStep(
-            index=len(steps) + 1,
-            description="Synthesize findings and provide the final answer with citations",
-            tool=None,
-        ))
+        steps.append(
+            PlanStep(
+                index=len(steps) + 1,
+                description="Synthesize findings and provide the final answer with citations",
+                tool=None,
+            )
+        )
 
         logger.info(f"Generated {len(steps)}-step plan via template")
         return steps

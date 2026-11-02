@@ -1,13 +1,16 @@
 """Stage 7: Citation Verification.
 
-Verifies that citations in the generated answer actually match the source paper content.
-Two-level verification: (1) string match, (2) LLM-based semantic verification.
+Verifies that citations in the generated answer actually match source evidence.
+Two-level verification (D8):
+- L1 (string/existence) — the cited source exists among the extracted evidence.
+- L2 (semantic support) — the evidence actually supports the cited claim.
 
-For the skeleton, this is a stub that passes everything through.
+For the skeleton, L1 is wired and L2 is a documented pass-through placeholder.
 """
 from __future__ import annotations
 
 from app.core.logging import get_logger
+from app.domain.survey import Survey
 from app.pipeline.base import BaseStage
 from app.pipeline.context import PipelineContext
 
@@ -21,25 +24,27 @@ class CitationVerificationStage(BaseStage):
         super().__init__(name="citation_verification")
 
     async def _execute(self, ctx: PipelineContext) -> None:
-        answer_data = ctx.get_state("generated_answer", {})
-        answer = answer_data.get("answer", "")
-        evidence = ctx.get_state("evidence", {}).get("evidence", [])
+        survey = ctx.state.survey
+        if survey is None:
+            ctx.state.verified = survey
+            return
 
-        logger.info("Verifying citations (stub)")
+        evidence_paper_ids = {chunk.paper_id for chunk in ctx.state.evidence}
 
-        # Stub: simple verification — count citations vs evidence
-        citations_found = answer.count("[")  # rough count
-        verified_count = min(len(evidence), citations_found)
+        # L1: a citation is retained only if its source exists in the evidence.
+        verified_citations = [
+            c for c in survey.citations if c.paper_id in evidence_paper_ids
+        ]
 
-        result = {
-            "verified": True,  # stub always passes
-            "total_citations": citations_found,
-            "verified_citations": verified_count,
-            "failed_citations": [],
-            "verification_level": "level1_string_match",
-        }
+        # L2 (semantic support): not implemented in this pass — pass-through.
+        for citation in verified_citations:
+            logger.debug(f"L1 verified citation [{citation.index}] -> {citation.paper_id}")
 
-        ctx.set_state("verified_answer", result)
+        ctx.state.verified = Survey(
+            answer=survey.answer,
+            citations=verified_citations,
+        )
         logger.info(
-            f"Citation verification: {verified_count}/{citations_found} verified (stub)"
+            f"Citation verification: {len(verified_citations)}/{len(survey.citations)} "
+            f"verified (L1); L2 deferred"
         )

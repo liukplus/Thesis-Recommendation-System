@@ -6,7 +6,7 @@ This lets us swap providers without changing calling code.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Literal, Optional, Protocol, runtime_checkable
+from typing import Any, Literal, Protocol, runtime_checkable
 
 MessageRole = Literal["system", "user", "assistant", "tool"]
 
@@ -26,8 +26,8 @@ class ChatMessage:
     role: MessageRole
     content: str
     tool_calls: list[dict[str, Any]] = field(default_factory=list)
-    tool_call_id: Optional[str] = None
-    name: Optional[str] = None
+    tool_call_id: str | None = None
+    name: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to the OpenAI-compatible message dict format."""
@@ -54,7 +54,7 @@ class Usage:
         """Total tokens (alias for total_tokens)."""
         return self.total_tokens
 
-    def add(self, other: "Usage") -> None:
+    def add(self, other: Usage) -> None:
         """Add another Usage's counts to this one."""
         self.prompt_tokens += other.prompt_tokens
         self.completion_tokens += other.completion_tokens
@@ -94,12 +94,12 @@ class LLMClient(Protocol):
         self,
         messages: list[ChatMessage],
         *,
-        model: Optional[str] = None,
-        temperature: Optional[float] = None,
-        max_tokens: Optional[int] = None,
-        tools: Optional[list[dict[str, Any]]] = None,
-        response_format: Optional[dict[str, Any]] = None,
-        timeout: Optional[float] = None,
+        model: str | None = None,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+        tools: list[dict[str, Any]] | None = None,
+        response_format: dict[str, Any] | None = None,
+        timeout: float | None = None,
     ) -> ChatResult:
         """Send a chat completion request.
 

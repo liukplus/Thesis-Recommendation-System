@@ -3,11 +3,17 @@
 Extracts key evidence sentences/paragraphs from top papers that support
 the query. Used for grounded generation in the next stage.
 
-For the skeleton, this is a stub.
+For the skeleton, this is a stub that fabricates illustrative spans around a
+verbatim ``abstract[:120]`` slice. Because the stored ``content`` is synthesized
+(a "Key finding" wrapper, not a contiguous source substring), chunks are marked
+``verbatim=False`` per D9; the verbatim slice itself is kept in ``anchor`` until
+real extractive matching lands.
 """
 from __future__ import annotations
 
 from app.core.logging import get_logger
+from app.domain.evidence import EvidenceChunk
+from app.domain.paper import Paper
 from app.pipeline.base import BaseStage
 from app.pipeline.context import PipelineContext
 
@@ -21,38 +27,33 @@ class EvidenceExtractionStage(BaseStage):
         super().__init__(name="evidence_extraction")
 
     async def _execute(self, ctx: PipelineContext) -> None:
-        reranked = ctx.get_state("reranked_papers", {})
-        top_papers = reranked.get("top_k", [])
-
+        top_papers = ctx.state.ranked[:5]
         logger.info(f"Extracting evidence from {len(top_papers)} top papers")
 
-        # Stub: generate mock evidence snippets
         evidence = _extract_mock_evidence(top_papers)
 
-        result = {
-            "total_evidence": len(evidence),
-            "evidence": evidence,
-        }
-
-        ctx.set_state("evidence", result)
+        ctx.state.evidence = evidence
         logger.info(f"Extracted {len(evidence)} evidence snippets")
 
 
-def _extract_mock_evidence(papers: list[dict]) -> list[dict]:
+def _extract_mock_evidence(papers: list[Paper]) -> list[EvidenceChunk]:
     """Generate mock evidence snippets for the skeleton.
 
     In production, this would do real sentence-level evidence extraction.
     """
-    evidence = []
+    evidence: list[EvidenceChunk] = []
     for i, paper in enumerate(papers[:5]):
-        # Generate 1-2 evidence snippets per paper
         for j in range(2 if i < 3 else 1):
-            evidence.append({
-                "paper_id": paper["id"],
-                "paper_title": paper["title"],
-                "evidence_id": f"ev_{paper['id']}_{j}",
-                "text": f"Key finding {j+1}: {paper['abstract'][:120]}...",
-                "relevance_score": round(0.9 - j * 0.15 - i * 0.05, 3),
-                "section": "abstract",
-            })
+            span = paper.abstract[:120]
+            evidence.append(
+                EvidenceChunk(
+                    chunk_id=f"ev_{paper.paper_id}_{j}",
+                    paper_id=paper.paper_id,
+                    section="abstract",
+                    content=f"Key finding {j + 1}: {span}...",
+                    anchor=span,
+                    verbatim=False,
+                    reason=f"top-{i + 1} paper (rerank_score={paper.rerank_score})",
+                )
+            )
     return evidence

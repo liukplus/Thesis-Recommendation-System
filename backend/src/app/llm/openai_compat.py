@@ -10,14 +10,14 @@ Works with any provider that implements the OpenAI API:
 """
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 
 import httpx
 
 from app.config import Settings, get_settings
 from app.core.exceptions import (
-    LLMTimeoutError,
     LLMRateLimitError,
+    LLMTimeoutError,
     LLMValidationError,
     ServiceUnavailableError,
 )
@@ -61,12 +61,12 @@ class OpenAICompatClient:
         self,
         messages: list[ChatMessage],
         *,
-        model: Optional[str] = None,
-        temperature: Optional[float] = None,
-        max_tokens: Optional[int] = None,
-        tools: Optional[list[dict[str, Any]]] = None,
-        response_format: Optional[dict[str, Any]] = None,
-        timeout: Optional[float] = None,
+        model: str | None = None,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+        tools: list[dict[str, Any]] | None = None,
+        response_format: dict[str, Any] | None = None,
+        timeout: float | None = None,
     ) -> ChatResult:
         """Send a chat completion request.
 
@@ -147,7 +147,7 @@ class OpenAICompatClient:
         logger.debug("OpenAICompatClient closed")
 
 
-def create_client_from_settings(settings: Optional[Settings] = None) -> OpenAICompatClient:
+def create_client_from_settings(settings: Settings | None = None) -> OpenAICompatClient:
     """Create an OpenAICompatClient from application settings.
 
     Args:

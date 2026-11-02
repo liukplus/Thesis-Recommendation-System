@@ -100,9 +100,8 @@ Thumbs.db
 # Docker volumes
 docker-data/
 
-# Claude Code — personal machine settings.
-# Shared, checked-in config belongs in .claude/settings.json instead.
-.claude/settings.local.json
+# Claude Code — local agent tooling/config; not project source or shared config.
+.claude/
 
 # Scratch — scraped third-party docs, not project material
 cli_reference_*
@@ -118,3 +117,15 @@ vibe-coding/
 docs/Resume_Shining_Points.md
 docs/Opening_Report_EN.md
 docs/院审修改_开题报告.md
+
+# Mid-term report and defense materials — local-only sources, generators,
+# outputs, backups, and student-ID-bearing deliverables.
+/mid-term-check
+/pre-script/
+/prep/
+/report/
+/report_build/
+/中期检查报告_*.docx*
+/中期检查报告_*.pdf
+/中期答辩PPT_*.pptx
+/开题报告上传.pdf
