@@ -100,8 +100,9 @@ Thumbs.db
 # Docker volumes
 docker-data/
 
-# Claude Code — local agent tooling/config; not project source or shared config.
-.claude/
+# Claude Code — personal machine settings.
+# Shared, checked-in config belongs in .claude/settings.json instead.
+.claude/settings.local.json
 
 # Scratch — scraped third-party docs, not project material
 cli_reference_*
